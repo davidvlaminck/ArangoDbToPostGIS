@@ -68,14 +68,16 @@ def setup_postgis_tables() -> None:
 
 def fill_database() -> None:
     from sync_assettypes import main as sync_assettypes_main
+    from sync_bestekken import main as sync_bestekken_main
     from sync_identiteiten import main as sync_identiteiten_main
     from sync_relatietypes import main as sync_relatietypes_main
     from sync_toezichtgroepen import main as sync_toezichtgroepen_main
 
     sync_assettypes_main()
+    sync_bestekken_main()
+    sync_identiteiten_main()
     sync_relatietypes_main()
     sync_toezichtgroepen_main()
-    sync_identiteiten_main()
 
 
 def main() -> None:

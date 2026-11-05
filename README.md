@@ -115,7 +115,7 @@ System collections: `_graphs`, `_appbundles`, `_frontend`, `_analyzers`, `_aqlfu
 | `assets` | `assets` | document | [ ] |
 | `assettypes` | `assettypes` | document | [x] |
 | `beheerders` | `beheerders` | document | [ ] |
-| `bestekken` | `bestekken` | document | [ ] |
+| `bestekken` | `bestekken` | document | [x] |
 | `identiteiten` | `identiteiten` | document | [x] |
 | `params` | `params` | document | [ ] |
 | `relatietypes` | `relatietypes` | document | [x] |
