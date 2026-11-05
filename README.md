@@ -113,7 +113,7 @@ System collections: `_graphs`, `_appbundles`, `_frontend`, `_analyzers`, `_aqlfu
 |---------------|-------------------|-------------|---------|
 | `agents` | `agents` | document | [ ] |
 | `assets` | `assets` | document | [ ] |
-| `assettypes` | `assettypes` | document | [ ] |
+| `assettypes` | `assettypes` | document | [x] |
 | `beheerders` | `beheerders` | document | [ ] |
 | `bestekken` | `bestekken` | document | [ ] |
 | `identiteiten` | `identiteiten` | document | [ ] |

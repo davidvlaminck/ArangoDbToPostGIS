@@ -1,0 +1,14 @@
+[project]
+name = "arangodbtopostgis"
+version = "0.1.0"
+description = "Copy data from ArangoDB to PostGIS"
+requires-python = ">=3.13"
+dependencies = [
+    "psycopg[binary]",
+    "python-arango",
+]
+
+[dependency-groups]
+dev = [
+    "ruff",
+]
