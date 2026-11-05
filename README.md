@@ -118,7 +118,7 @@ System collections: `_graphs`, `_appbundles`, `_frontend`, `_analyzers`, `_aqlfu
 | `bestekken` | `bestekken` | document | [ ] |
 | `identiteiten` | `identiteiten` | document | [ ] |
 | `params` | `params` | document | [ ] |
-| `relatietypes` | `relatietypes` | document | [ ] |
+| `relatietypes` | `relatietypes` | document | [x] |
 | `toezichtgroepen` | `toezichtgroepen` | document | [ ] |
 | `assetrelaties` | `assetrelaties` | edge | [ ] |
 | `bestekkoppelingen` | `bestekkoppelingen` | edge | [ ] |
