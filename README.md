@@ -119,10 +119,15 @@ System collections: `_graphs`, `_appbundles`, `_frontend`, `_analyzers`, `_aqlfu
 | `identiteiten` | `identiteiten` | document | [ ] |
 | `params` | `params` | document | [ ] |
 | `relatietypes` | `relatietypes` | document | [x] |
-| `toezichtgroepen` | `toezichtgroepen` | document | [ ] |
+| `toezichtgroepen` | `toezichtgroepen` | document | [x] |
 | `assetrelaties` | `assetrelaties` | edge | [ ] |
 | `bestekkoppelingen` | `bestekkoppelingen` | edge | [ ] |
 | `betrokkenerelaties` | `betrokkenerelaties` | edge | [ ] |
+
+afgeleide graphs
+
+| PostGIS table | Arango collection | Arango type | Done |
+|---------------|-------------------|-------------|---------|
 | `bevestiging_relaties` | `bevestiging_relaties` | edge | [ ] |
 | `heeftkeuring_relaties` | `heeftkeuring_relaties` | edge | [ ] |
 | `hoortbij_relaties` | `hoortbij_relaties` | edge | [ ] |
