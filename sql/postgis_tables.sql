@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS public.agents
     naam text,
     void uuid,
     actief boolean NOT NULL,
-    contact_info json,
+    contact_info jsonb,
     ovo_code text,
     PRIMARY KEY (uuid)
 );

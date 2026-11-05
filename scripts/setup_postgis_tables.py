@@ -33,7 +33,6 @@ MANAGED_TABLES = [
     "relatietypes",
 ]
 
-
 def ensure_tables(conn) -> None:
     missing = [t for t in MANAGED_TABLES if not table_exists(conn, t)]
     if not missing:
