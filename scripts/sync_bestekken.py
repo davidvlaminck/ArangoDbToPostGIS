@@ -16,7 +16,9 @@ FIELD_MAP = {
     "eDeltaDossiernummer": "eDeltaDossiernummer",
     "eDeltaBesteknummer": "eDeltaBesteknummer",
     "aannemerNaam": "aannemerNaam",
-    # type, awvId, aannemerReferentie, actief -> extra Arango data -> ignored
+    "awvId": "awvId",
+    "aannemerReferentie": "aannemerReferentie",
+    "actief": "actief",
 }
 
 
@@ -34,6 +36,9 @@ def fetch_bestekken_arango() -> list[dict]:
         rows = {}
         for arango_field, pg_column in FIELD_MAP.items():
             rows[pg_column] = doc.get(arango_field)
+        # actief has a DEFAULT TRUE constraint in PostGIS; default if missing.
+        if rows["actief"] is None:
+            rows["actief"] = True
         # Skip docs missing required NOT NULL fields.
         if rows["uuid"] is None or rows["eDeltaDossiernummer"] is None or rows["eDeltaBesteknummer"] is None:
             continue
