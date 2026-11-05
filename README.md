@@ -111,10 +111,10 @@ System collections: `_graphs`, `_appbundles`, `_frontend`, `_analyzers`, `_aqlfu
 
 | PostGIS table | Arango collection | Arango type | Done |
 |---------------|-------------------|-------------|---------|
-| `agents` | `agents` | document | [ ] |
+| `agents` | `agents` | document | [x] |
 | `assets` | `assets` | document | [ ] |
 | `assettypes` | `assettypes` | document | [x] |
-| `beheerders` | `beheerders` | document | [ ] |
+| `beheerders` | `beheerders` | document | [x] |
 | `bestekken` | `bestekken` | document | [x] |
 | `identiteiten` | `identiteiten` | document | [x] |
 | `params` | `params` | document | [ ] |
