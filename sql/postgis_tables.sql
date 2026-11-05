@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS public.toezichtgroepen
     uuid uuid NOT NULL,
     naam text COLLATE pg_catalog."default",
     typeGroep text COLLATE pg_catalog."default",
-    referentie text COLLATE pg_catalog."default",
+    omschrijving text COLLATE pg_catalog."default",
     actief boolean NOT NULL,
     CONSTRAINT toezichtgroepen_pkey PRIMARY KEY (uuid)
 );
