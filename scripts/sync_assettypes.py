@@ -16,6 +16,7 @@ FIELD_MAP = {
     "naam": "naam",
     "label": "label",
     "uri": "uri",
+    "short_uri": "short_uri",
     "definitie": "definitie",
     "actief": "actief",
 }

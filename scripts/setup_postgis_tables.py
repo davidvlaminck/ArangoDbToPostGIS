@@ -22,16 +22,29 @@ def table_exists(conn, table_name: str) -> bool:
         return cur.fetchone()[0]
 
 
+MANAGED_TABLES = [
+    "params",
+    "agents",
+    "assettypes",
+    "bestekken",
+    "beheerders",
+    "toezichtgroepen",
+    "identiteiten",
+    "relatietypes",
+]
+
+
 def ensure_tables(conn) -> None:
-    if table_exists(conn, "params"):
-        print("params table already exists — nothing to create.")
+    missing = [t for t in MANAGED_TABLES if not table_exists(conn, t)]
+    if not missing:
+        print("All managed tables already exist — nothing to create.")
         return
 
     sql = SQL_FILE.read_text()
     with conn.cursor() as cur:
         cur.execute(sql)
     conn.commit()
-    print("Created params and assettypes tables (params was missing).")
+    print(f"Created missing tables: {', '.join(missing)}")
 
 
 def main() -> None:
