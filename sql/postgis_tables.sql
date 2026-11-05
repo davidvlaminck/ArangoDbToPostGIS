@@ -142,11 +142,11 @@ CREATE TABLE IF NOT EXISTS public.identiteiten
     naam text COLLATE pg_catalog."default",
     voornaam text COLLATE pg_catalog."default",
     gebruikersnaam text COLLATE pg_catalog."default",
-    typeIdentiteit text COLLATE pg_catalog."default",
-    actief boolean NOT NULL,
     systeem boolean NOT NULL,
+    typeIdentiteit text COLLATE pg_catalog."default",
     voId text COLLATE pg_catalog."default",
     bron text COLLATE pg_catalog."default",
+    actief boolean NOT NULL,
     CONSTRAINT identiteiten_pkey PRIMARY KEY (uuid)
 );
 
