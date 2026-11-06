@@ -461,3 +461,30 @@ BEGIN
 EXCEPTION WHEN undefined_table OR undefined_column THEN
     NULL;
 END $$;
+
+-- View: aantallen (row counts across all managed tables)
+CREATE MATERIALIZED VIEW IF NOT EXISTS public.aantallen AS
+SELECT 'agents' AS tabel, count(*) AS aantal FROM public.agents
+UNION ALL SELECT 'assettypes', count(*) FROM public.assettypes
+UNION ALL SELECT 'assets', count(*) FROM public.assets
+UNION ALL SELECT 'geometrie', count(*) FROM public.geometrie
+UNION ALL SELECT 'bestekken', count(*) FROM public.bestekken
+UNION ALL SELECT 'bestekkoppelingen', count(*) FROM public.bestekkoppelingen
+UNION ALL SELECT 'beheerders', count(*) FROM public.beheerders
+UNION ALL SELECT 'toezichtgroepen', count(*) FROM public.toezichtgroepen
+UNION ALL SELECT 'identiteiten', count(*) FROM public.identiteiten
+UNION ALL SELECT 'relatietypes', count(*) FROM public.relatietypes
+UNION ALL SELECT 'assetrelaties', count(*) FROM public.assetrelaties
+UNION ALL SELECT 'betrokkenerelaties', count(*) FROM public.betrokkenerelaties;
+
+-- Relation-type filtered views
+CREATE MATERIALIZED VIEW IF NOT EXISTS public.bevestiging_relaties AS
+SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%bevestig%';
+CREATE MATERIALIZED VIEW IF NOT EXISTS public.sturing_relaties AS
+SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%sturing%';
+CREATE MATERIALIZED VIEW IF NOT EXISTS public.hoortbij_relaties AS
+SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%hoortbij%';
+CREATE MATERIALIZED VIEW IF NOT EXISTS public.voedt_relaties AS
+SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%voedt%';
+CREATE MATERIALIZED VIEW IF NOT EXISTS public.ligtop_relaties AS
+SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%ligtop%';
