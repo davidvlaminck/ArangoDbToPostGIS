@@ -74,6 +74,18 @@ def test_execute_upsert_builds_sql() -> None:
     conn.commit.assert_called_once()
 
 
+def test_execute_upsert_sanitizes_empty_strings() -> None:
+    conn = mock.MagicMock()
+    cursor = mock.Mock()
+    conn.cursor.return_value.__enter__.return_value = cursor
+
+    rows = [{"uuid": "", "naam": ""}]
+    db.execute_upsert(conn, "public.t", {"uuid": "uuid", "naam": "naam"}, rows)
+
+    params = cursor.executemany.call_args[0][1]
+    assert params == [[None, None]]
+
+
 def test_execute_upsert_batching() -> None:
     conn = mock.MagicMock()
     cursor = mock.Mock()

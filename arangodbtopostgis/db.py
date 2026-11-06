@@ -16,7 +16,7 @@ def get_arango_client(env: str = "dev") -> ArangoClient:
     return ArangoClient(hosts=creds["hosts"])
 
 
-def get_arango_db(env: str = "dev"):
+def get_arango_db(env: str = "dev") -> Any:
     """Return an authenticated Arango database connection."""
     creds = arango_creds(env)
     client = get_arango_client(env)
@@ -71,8 +71,19 @@ def execute_upsert(
     with conn.cursor() as cur:
         for start in range(0, len(rows), batch_size):
             batch = rows[start : start + batch_size]
-            params = [[row[col] for col in columns] for row in batch]
+            params = [[_sanitize(row[col]) for col in columns] for row in batch]
             cur.executemany(sql, params)
             total += len(batch)
     conn.commit()
     return total
+
+
+def _sanitize(value: Any) -> Any:
+    """Convert empty strings to ``None`` so PostGIS does not reject them.
+
+    Arango sometimes stores ``""`` where a UUID or other typed column expects
+    a real value; PostGIS raises ``InvalidTextRepresentation`` in that case.
+    """
+    if value == "":
+        return None
+    return value

@@ -33,6 +33,25 @@ def test_is_valid_requires_uuid() -> None:
     syncer = _DummySyncer()
     assert syncer._is_valid({"uuid": "abc", "naam": "Test", "actief": True})
     assert not syncer._is_valid({"uuid": None, "naam": "Test", "actief": True})
+    assert not syncer._is_valid({"uuid": "", "naam": "Test", "actief": True})
+
+
+def test_fetch_skips_rows_with_empty_uuid() -> None:
+    syncer = _DummySyncer()
+    fake_collection = mock.Mock()
+    fake_collection.all.return_value = iter(
+        [
+            {"uuid": "valid-1", "naam": "ok"},
+            {"uuid": "", "naam": "empty-string"},
+            {"uuid": None, "naam": "none"},
+        ]
+    )
+    fake_db = mock.Mock()
+    fake_db.collection.return_value = fake_collection
+    with mock.patch("arangodbtopostgis.syncer.get_arango_db", return_value=fake_db):
+        rows = syncer.fetch()
+    assert len(rows) == 1
+    assert rows[0]["uuid"] == "valid-1"
 
 
 def test_run_calls_fetch_and_upsert() -> None:

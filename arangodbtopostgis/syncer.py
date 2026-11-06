@@ -94,8 +94,12 @@ class BaseSyncer:
         return row
 
     def _is_valid(self, row: dict[str, Any]) -> bool:
-        """Return ``True`` when the row contains all required columns."""
-        return all(row.get(col) is not None for col in self.REQUIRED_COLUMNS)
+        """Return ``True`` when the row contains all required columns.
+
+        Both ``None`` and empty strings are treated as missing — PostGIS
+        rejects empty strings for ``uuid`` columns.
+        """
+        return all(row.get(col) is not None and row.get(col) != "" for col in self.REQUIRED_COLUMNS)
 
     # ------------------------------------------------------------------
     # Upsert
