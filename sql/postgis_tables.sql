@@ -332,7 +332,7 @@ CREATE TABLE IF NOT EXISTS public.assetrelaties
     uuid uuid NOT NULL,
     bron_asset_uuid uuid NOT NULL,
     doel_asset_uuid uuid NOT NULL,
-    relatietype_uuid uuid NOT NULL,
+    relatietype_uuid uuid,
     bron_type text,
     doel_type text,
     type_uri text,
@@ -411,7 +411,7 @@ CREATE TABLE IF NOT EXISTS public.betrokkenerelaties
     bron_asset_uuid uuid,
     bron_agent_uuid uuid,
     doel_agent_uuid uuid NOT NULL,
-    relatietype_uuid uuid NOT NULL,
+    relatietype_uuid uuid,
     rol text,
     bron_type text,
     doel_type text,
@@ -462,4 +462,12 @@ BEGIN
         FOREIGN KEY (relatietype_uuid) REFERENCES public.relatietypes (uuid) MATCH SIMPLE
         ON UPDATE NO ACTION ON DELETE NO ACTION NOT VALID;
 EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE public.betrokkenerelaties
+        ALTER COLUMN relatietype_uuid DROP NOT NULL;
+EXCEPTION WHEN undefined_table OR undefined_column THEN
+    NULL;
 END $$;

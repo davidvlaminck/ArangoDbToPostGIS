@@ -93,7 +93,7 @@ class BetrokkenerelatiesSyncer:
         "actief": "actief",
         "attributes": "attributes",
     }
-    REQUIRED_COLUMNS = ("uuid", "doel_agent_uuid", "relatietype_uuid")
+    REQUIRED_COLUMNS = ("uuid", "doel_agent_uuid")
 
     def __init__(self, arango_env: str = "dev", postgis_env: str = "prd", *, limit: int | None = None) -> None:
         self.arango_env = arango_env
@@ -101,6 +101,7 @@ class BetrokkenerelatiesSyncer:
         self.limit = limit
         self._rt_by_key: dict[str, str] = {}
         self._rt_by_uri: dict[str, str] = {}
+        self._agent_uuid_by_key: dict[str, str] = {}
 
     def _load_relatietype_lookups(self) -> None:
         db = get_arango_db(self.arango_env)
@@ -115,6 +116,15 @@ class BetrokkenerelatiesSyncer:
                 self._rt_by_key[str(key)] = uuid
             if uri:
                 self._rt_by_uri[str(uri)] = uuid
+
+    def _load_agent_lookups(self) -> None:
+        db = get_arango_db(self.arango_env)
+        cursor = db.aql.execute("FOR a IN agents RETURN {_key: a._key, uuid: a.uuid}")
+        for d in cursor:
+            key = d.get("_key")
+            uuid = d.get("uuid")
+            if key and uuid:
+                self._agent_uuid_by_key[str(key)] = uuid
 
     def _resolve_relatietype(self, doc: dict[str, Any]) -> str | None:
         rt_key = doc.get("relatietype_key")
@@ -139,8 +149,10 @@ class BetrokkenerelatiesSyncer:
         bron_ref = doc.get("_from")
         doel_ref = doc.get("_to")
         bron_asset = _uuid_from_ref(bron_ref, "assets")
-        bron_agent = _uuid_from_ref(bron_ref, "agents")
-        doel_agent = _uuid_from_ref(doel_ref, "agents")
+        bron_agent_key = _uuid_from_ref(bron_ref, "agents")
+        doel_agent_key = _uuid_from_ref(doel_ref, "agents")
+        bron_agent = self._agent_uuid_by_key.get(bron_agent_key) if bron_agent_key else None
+        doel_agent = self._agent_uuid_by_key.get(doel_agent_key) if doel_agent_key else None
         if not uuid or not doel_agent:
             return None
         if bron_asset is None and bron_agent is None:
@@ -205,6 +217,7 @@ class BetrokkenerelatiesSyncer:
 
     def run_resumable(self, resume_cursor: str | None = None) -> int:
         self._load_relatietype_lookups()
+        self._load_agent_lookups()
         db = get_arango_db(self.arango_env)
         after = None if resume_cursor in (None, "", "__DONE__") else resume_cursor
         bind: dict[str, Any] = {"after": after or ""}
