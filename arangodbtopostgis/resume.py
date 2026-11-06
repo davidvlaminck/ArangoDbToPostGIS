@@ -127,6 +127,7 @@ def get_resume_cursor(conn: psycopg.Connection, step: str) -> str | None:
 
 
 def mark_step_started(conn: psycopg.Connection, step: str) -> None:
+    logger.info(f"{step}: marked started")
     set_param(conn, CURRENT_STEP_KEY, value_text=step)
     set_param(conn, CURRENT_STEP_NUM_KEY, value_int=STEP_NUMBERS.get(step))
     if step in RESUMABLE_STEPS:
@@ -145,6 +146,7 @@ def save_cursor_and_commit(conn: psycopg.Connection, step: str, cursor: str | No
 
 
 def mark_step_done(conn: psycopg.Connection, step: str) -> None:
+    logger.info(f"{step}: marked done")
     if step in RESUMABLE_STEPS:
         set_param(conn, DONE_KEY.format(step=step), value_bool=True)
         clear_param(conn, CURSOR_KEY.format(step=step))
