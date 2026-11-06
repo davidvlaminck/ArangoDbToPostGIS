@@ -1,6 +1,12 @@
-"""Sync ``relatietypes`` from ArangoDB to PostGIS."""
+"""Sync ``relatietypes`` from ArangoDB to PostGIS.
+
+Rows without a ``uri`` are skipped — every synced relatietype must be
+addressable by a stable identifier.
+"""
 
 from __future__ import annotations
+
+from typing import Any
 
 from arangodbtopostgis.syncer import BaseSyncer
 
@@ -18,6 +24,14 @@ class RelatietypesSyncer(BaseSyncer):
         "actief": "actief",
         "gericht": "gericht",
     }
+    REQUIRED_COLUMNS = ("uuid", "uri")
+
+    def _transform(self, doc: dict[str, Any]) -> dict[str, Any] | None:
+        # Skip relatietypes that have no URI — they cannot be reliably
+        # referenced from other tables.
+        if not doc.get("uri"):
+            return None
+        return super()._transform(doc)
 
 
 def main() -> None:

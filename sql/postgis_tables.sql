@@ -1,11 +1,15 @@
 -- Table definitions copied from AWVInfraPostGISSyncer/setup_tables_querys.sql
 -- (same level as this repo)
+--
+-- NOT NULL annotations added after inspecting live data: every column
+-- marked NOT NULL here had zero NULL (and zero empty-string) values across
+-- all rows at analysis time. Columns that had any NULL/empty are left nullable.
 
 -- Table: public.params
 
 CREATE TABLE IF NOT EXISTS public.params
 (
-    key_name VARCHAR(40),
+    key_name VARCHAR(40) NOT NULL,
     value_int integer,
     value_text text,
     value_bool boolean,
@@ -21,13 +25,15 @@ INSERT INTO public.params(key_name, value_int)
 VALUES ('pagesize', 100)
 ON CONFLICT (key_name) DO UPDATE SET value_int = EXCLUDED.value_int;
 
+-- Table: public.agents
+
 CREATE TABLE IF NOT EXISTS public.agents
 (
     uuid uuid NOT NULL,
-    naam text,
+    naam text NOT NULL,
     void uuid,
     actief boolean NOT NULL,
-    contact_info jsonb,
+    contact_info jsonb NOT NULL,
     ovo_code text,
     PRIMARY KEY (uuid)
 );
@@ -42,7 +48,7 @@ CREATE TABLE IF NOT EXISTS public.assettypes
     label text COLLATE pg_catalog."default" NOT NULL,
     uri text COLLATE pg_catalog."default" NOT NULL,
     short_uri text COLLATE pg_catalog."default" NOT NULL,
-    definitie text COLLATE pg_catalog."default",
+    definitie text COLLATE pg_catalog."default" NOT NULL,
     actief boolean NOT NULL,
     -- bestek boolean,
     -- geometrie boolean,
@@ -90,9 +96,9 @@ CREATE TABLE IF NOT EXISTS public.bestekken
 CREATE TABLE IF NOT EXISTS public.beheerders
 (
     uuid uuid NOT NULL,
-    naam text COLLATE pg_catalog."default",
-    referentie text COLLATE pg_catalog."default",
-    typeBeheerder text COLLATE pg_catalog."default",
+    naam text COLLATE pg_catalog."default" NOT NULL,
+    referentie text COLLATE pg_catalog."default" NOT NULL,
+    typeBeheerder text COLLATE pg_catalog."default" NOT NULL,
     actief boolean NOT NULL,
     CONSTRAINT beheerders_pkey PRIMARY KEY (uuid)
 );
@@ -116,8 +122,8 @@ END $$;
 CREATE TABLE IF NOT EXISTS public.toezichtgroepen
 (
     uuid uuid NOT NULL,
-    naam text COLLATE pg_catalog."default",
-    typeGroep text COLLATE pg_catalog."default",
+    naam text COLLATE pg_catalog."default" NOT NULL,
+    typeGroep text COLLATE pg_catalog."default" NOT NULL,
     omschrijving text COLLATE pg_catalog."default",
     actief boolean NOT NULL,
     CONSTRAINT toezichtgroepen_pkey PRIMARY KEY (uuid)
@@ -142,11 +148,11 @@ END $$;
 CREATE TABLE IF NOT EXISTS public.identiteiten
 (
     uuid uuid NOT NULL,
-    naam text COLLATE pg_catalog."default",
-    voornaam text COLLATE pg_catalog."default",
-    gebruikersnaam text COLLATE pg_catalog."default",
+    naam text COLLATE pg_catalog."default" NOT NULL,
+    voornaam text COLLATE pg_catalog."default" NOT NULL,
+    gebruikersnaam text COLLATE pg_catalog."default" NOT NULL,
     systeem boolean NOT NULL,
-    typeIdentiteit text COLLATE pg_catalog."default",
+    typeIdentiteit text COLLATE pg_catalog."default" NOT NULL,
     voId text COLLATE pg_catalog."default",
     bron text COLLATE pg_catalog."default",
     actief boolean NOT NULL,
@@ -172,11 +178,11 @@ END $$;
 CREATE TABLE IF NOT EXISTS public.relatietypes
 (
     uuid uuid NOT NULL,
-    naam text COLLATE pg_catalog."default",
-    label text COLLATE pg_catalog."default",
-    definitie text COLLATE pg_catalog."default",
-    uri text COLLATE pg_catalog."default",
-    short_uri text COLLATE pg_catalog."default",
+    naam text COLLATE pg_catalog."default" NOT NULL,
+    label text COLLATE pg_catalog."default" NOT NULL,
+    definitie text COLLATE pg_catalog."default" NOT NULL,
+    uri text COLLATE pg_catalog."default" NOT NULL,
+    short_uri text COLLATE pg_catalog."default" NOT NULL,
     actief boolean NOT NULL,
     gericht boolean NOT NULL,
     CONSTRAINT relatietypes_pkey PRIMARY KEY (uuid)

@@ -89,3 +89,16 @@ def test_required_columns_skip_invalid_rows() -> None:
     valid = [r for r in rows if r is not None and syncer._is_valid(r)]
     assert len(valid) == 1
     assert valid[0]["uuid"] == "1"
+
+
+def test_relatietypes_syncer_skips_rows_without_uri() -> None:
+    from arangodbtopostgis.sync_relatietypes import RelatietypesSyncer
+
+    syncer = RelatietypesSyncer()
+    # GevoedDoor has no uri — must be skipped.
+    assert syncer._transform({"uuid": "abc", "naam": "GevoedDoor", "uri": None}) is None
+    assert syncer._transform({"uuid": "abc", "naam": "GevoedDoor", "uri": ""}) is None
+    # A normal relatietype with a uri passes through.
+    row = syncer._transform({"uuid": "def", "naam": "Heeft", "uri": "http://x/Heeft"})
+    assert row is not None
+    assert row["uri"] == "http://x/Heeft"

@@ -22,19 +22,17 @@ MANAGED_TABLES: tuple[str, ...] = (
 
 
 def table_exists(conn: psycopg.Connection, table_name: str) -> bool:
-
-
-        """Return ``True`` when ``table_name`` exists in the public schema."""
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT EXISTS ("
-                "  SELECT 1 FROM information_schema.tables "
-                "  WHERE table_schema = 'public' AND table_name = %s"
-                ")",
-                (table_name,),
-            )
-            row = cur.fetchone()
-        return bool(row[0]) if row else False
+    """Return ``True`` when ``table_name`` exists in the public schema."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT EXISTS ("
+            "  SELECT 1 FROM information_schema.tables "
+            "  WHERE table_schema = 'public' AND table_name = %s"
+            ")",
+            (table_name,),
+        )
+        row = cur.fetchone()
+    return bool(row[0]) if row else False
 
 
 def ensure_tables(conn: psycopg.Connection) -> None:
