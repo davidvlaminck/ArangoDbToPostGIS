@@ -31,6 +31,7 @@ MANAGED_TABLES: tuple[str, ...] = (
     "identiteiten",
     "relatietypes",
     "assetrelaties",
+    "betrokkenerelaties",
 )
 
 

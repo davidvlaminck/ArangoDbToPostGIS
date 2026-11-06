@@ -15,6 +15,7 @@ from arangodbtopostgis.sync_assettypes import AssettypesSyncer
 from arangodbtopostgis.sync_beheerders import BeheerdersSyncer
 from arangodbtopostgis.sync_bestekken import BestekkenSyncer
 from arangodbtopostgis.sync_bestekkoppelingen import BestekkoppelingenSyncer
+from arangodbtopostgis.sync_betrokkenerelaties import BetrokkenerelatiesSyncer
 from arangodbtopostgis.sync_identiteiten import IdentiteitenSyncer
 from arangodbtopostgis.sync_relatietypes import RelatietypesSyncer
 from arangodbtopostgis.sync_toezichtgroepen import ToezichtgroepenSyncer
@@ -122,6 +123,7 @@ def fill_database() -> None:
         AssetsSyncer(limit=None),
         BestekkoppelingenSyncer(),
         AssetrelatiesSyncer(),
+        BetrokkenerelatiesSyncer(),
     ]
     for syncer in syncers:
         step = getattr(syncer, "RESUME_STEP", syncer.ARANGO_COLLECTION)

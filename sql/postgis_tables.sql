@@ -402,3 +402,64 @@ BEGIN
 EXCEPTION WHEN duplicate_object OR undefined_table THEN
     NULL;
 END $$;
+-- Table: public.betrokkenerelaties
+-- Edge collection; source may be asset or agent; target always agent.
+
+CREATE TABLE IF NOT EXISTS public.betrokkenerelaties
+(
+    uuid uuid NOT NULL,
+    bron_asset_uuid uuid,
+    bron_agent_uuid uuid,
+    doel_agent_uuid uuid NOT NULL,
+    relatietype_uuid uuid NOT NULL,
+    rol text,
+    bron_type text,
+    doel_type text,
+    type_uri text,
+    asset_id_identificator text,
+    asset_id_toegekend_door text,
+    actief boolean,
+    attributes jsonb,
+    CONSTRAINT betrokkenerelaties_pkey PRIMARY KEY (uuid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_bron_asset ON public.betrokkenerelaties (bron_asset_uuid);
+CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_bron_agent ON public.betrokkenerelaties (bron_agent_uuid);
+CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_doel_agent ON public.betrokkenerelaties (doel_agent_uuid);
+CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_relatietype ON public.betrokkenerelaties (relatietype_uuid);
+
+DO $$
+BEGIN
+    ALTER TABLE IF EXISTS public.betrokkenerelaties
+        ADD CONSTRAINT betrokkenerelaties_bron_asset_fkey
+        FOREIGN KEY (bron_asset_uuid) REFERENCES public.assets (uuid) MATCH SIMPLE
+        ON UPDATE NO ACTION ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE IF EXISTS public.betrokkenerelaties
+        ADD CONSTRAINT betrokkenerelaties_bron_agent_fkey
+        FOREIGN KEY (bron_agent_uuid) REFERENCES public.agents (uuid) MATCH SIMPLE
+        ON UPDATE NO ACTION ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE IF EXISTS public.betrokkenerelaties
+        ADD CONSTRAINT betrokkenerelaties_doel_agent_fkey
+        FOREIGN KEY (doel_agent_uuid) REFERENCES public.agents (uuid) MATCH SIMPLE
+        ON UPDATE NO ACTION ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE IF EXISTS public.betrokkenerelaties
+        ADD CONSTRAINT betrokkenerelaties_relatietype_fkey
+        FOREIGN KEY (relatietype_uuid) REFERENCES public.relatietypes (uuid) MATCH SIMPLE
+        ON UPDATE NO ACTION ON DELETE NO ACTION NOT VALID;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
+END $$;
