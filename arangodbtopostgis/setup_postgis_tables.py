@@ -14,6 +14,7 @@ MANAGED_TABLES: tuple[str, ...] = (
     "agents",
     "assettypes",
     "assets",
+    "geometrie",
     "bestekken",
     "beheerders",
     "toezichtgroepen",

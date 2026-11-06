@@ -13,6 +13,7 @@ import os
 from datetime import date, datetime
 from typing import Any
 
+import psycopg
 from psycopg.types.json import Jsonb
 
 from arangodbtopostgis.db import get_arango_db
@@ -101,13 +102,40 @@ class AssetsSyncer(BaseSyncer):
         # Assets can be very large (millions); upsert in streaming batches.
         return []
 
-    def _pg_columns(self, conn) -> set[str]:
+    def _pg_columns(self, conn, table: str = "assets") -> set[str]:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema='public' AND table_name='assets'"
+                "WHERE table_schema='public' AND table_name=%s",
+                (table,),
             )
             return {r[0] for r in cur.fetchall()}
+
+    def _upsert_geometrie(self, conn: psycopg.Connection, rows: list[dict[str, Any]]) -> int:
+        """Upsert geometry rows parsed from top-level `wkt` (SRID=3812). WKT leads; no fallback."""
+        if not rows:
+            return 0
+        sql = """
+            INSERT INTO public.geometrie (asset_uuid, wkt, geom)
+            VALUES (%s::uuid, %s, ST_Force3DZ(ST_SetSRID(ST_GeomFromEWKT(%s), 3812)))
+            ON CONFLICT (asset_uuid) DO UPDATE
+            SET wkt = EXCLUDED.wkt, geom = EXCLUDED.geom
+        """
+        inserted = 0
+        with conn.cursor() as cur:
+            for row in rows:
+                try:
+                    cur.execute("SAVEPOINT geom_row")
+                    cur.execute(sql, (row["asset_uuid"], row["wkt"], row["wkt"]))
+                    cur.execute("RELEASE SAVEPOINT geom_row")
+                    inserted += 1
+                except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT geom_row")
+                    print(
+                        f"{self.__class__.__name__}: skipped geometry for {row['asset_uuid']}: {exc}"
+                    )
+        conn.commit()
+        return inserted
 
     def run(self) -> int:
         self._load_assettype_lookup()
@@ -123,9 +151,17 @@ class AssetsSyncer(BaseSyncer):
             extra = sorted(set(self.FIELD_MAP) - set(field_map))
             if extra:
                 print(f"{self.__class__.__name__}: skipping unmapped/missing columns: {extra}")
+            has_geometrie = "geometrie" in self._pg_columns(conn, "public.geometrie".split(".")[-1])
+            # _pg_columns takes table name
+            with conn.cursor() as cur:
+                cur.execute("SELECT to_regclass('public.geometrie')")
+                has_geometrie = cur.fetchone()[0] is not None
+            if not has_geometrie:
+                print(f"{self.__class__.__name__}: public.geometrie missing; geometry sync skipped")
 
-            fetched = upserted = unknown_types = batch_n = 0
+            fetched = upserted = geom_upserted = unknown_types = batch_n = 0
             batch: list[dict[str, Any]] = []
+            geom_batch: list[dict[str, Any]] = []
             for doc in db.aql.execute(query, bind_vars=bind, batch_size=self.BATCH_SIZE):
                 row = self._transform(doc)
                 if row is None:
@@ -135,6 +171,8 @@ class AssetsSyncer(BaseSyncer):
                 if not self._is_valid(row):
                     continue
                 batch.append(row)
+                if has_geometrie and row.get("wkt"):
+                    geom_batch.append({"asset_uuid": row["uuid"], "wkt": row["wkt"]})
                 fetched += 1
                 if len(batch) >= self.BATCH_SIZE:
                     from arangodbtopostgis.db import execute_upsert
@@ -142,9 +180,15 @@ class AssetsSyncer(BaseSyncer):
                     upserted += execute_upsert(
                         conn, self.POSTGIS_TABLE, field_map, batch, batch_size=self.BATCH_SIZE
                     )
+                    if has_geometrie:
+                        geom_upserted += self._upsert_geometrie(conn, geom_batch)
+                        geom_batch = []
                     batch_n += 1
                     if batch_n % 50 == 0:
-                        print(f"{self.__class__.__name__}: progress fetched={fetched} upserted={upserted}")
+                        print(
+                            f"{self.__class__.__name__}: progress fetched={fetched} "
+                            f"upserted={upserted} geometrie={geom_upserted}"
+                        )
                     batch = []
             if batch:
                 from arangodbtopostgis.db import execute_upsert
@@ -152,6 +196,8 @@ class AssetsSyncer(BaseSyncer):
                 upserted += execute_upsert(
                     conn, self.POSTGIS_TABLE, field_map, batch, batch_size=self.BATCH_SIZE
                 )
+                if has_geometrie:
+                    geom_upserted += self._upsert_geometrie(conn, geom_batch)
         finally:
             conn.close()
         print(
@@ -160,7 +206,10 @@ class AssetsSyncer(BaseSyncer):
             + (f" (limit={self.limit})" if self.limit else "")
             + (f", {unknown_types} with unresolved assettype" if unknown_types else "")
         )
-        print(f"{self.__class__.__name__}: upserted {upserted} into {self.POSTGIS_TABLE}")
+        print(
+            f"{self.__class__.__name__}: upserted {upserted} into {self.POSTGIS_TABLE}, "
+            f"{geom_upserted} into public.geometrie"
+        )
         return upserted
 
     @staticmethod

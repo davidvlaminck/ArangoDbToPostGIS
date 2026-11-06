@@ -103,6 +103,22 @@ CREATE TABLE IF NOT EXISTS public.assets
 
 CREATE INDEX IF NOT EXISTS idx_assets_assettype ON public.assets (assettype);
 
+-- Optional JSONB indexes (add only if/when specific queries are slow; not created by default).
+-- jsonb is built-in (no extension). GIN indexes are large and slow writes/sync at 4M rows,
+-- so prefer a targeted index on the concrete column/path you search, not all jsonb columns.
+--
+-- Containment queries (e.g. attributes @> '{"SomeKey":"value"}'):
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_assets_attributes_gin
+--     ON public.assets USING GIN (attributes jsonb_path_ops);  -- smaller; supports @>
+--   -- use jsonb_ops instead of jsonb_path_ops if you also need key-existence (?, ?|, ?&).
+--
+-- Single nested path / equality (often best):
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_assets_attr_somekey
+--     ON public.assets ((attributes->>'SomeKey'));
+--
+-- Extensions (not required for the above): btree_gin only for mixed multicolumn GIN;
+-- pg_trgm only for LIKE/ILIKE/trigram text search, not JSONB containment.
+
 DO $$
 BEGIN
     ALTER TABLE IF EXISTS public.assets
@@ -115,6 +131,25 @@ BEGIN
 EXCEPTION WHEN duplicate_object THEN
     -- constraint already exists, skip
 END $$;
+
+
+-- Table: public.geometrie
+-- Canonical spatial data derived from Arango asset top-level `wkt` (SRID=3812 / Lambert 2008).
+-- WKT is the lead; no fallback to Arango `geometry` (GeoJSON) or `geo.Geometrie_log`.
+
+CREATE TABLE IF NOT EXISTS public.geometrie
+(
+    asset_uuid uuid NOT NULL,
+    wkt text NOT NULL,
+    geom geometry(GeometryZ, 3812) NOT NULL,
+    CONSTRAINT geometrie_pkey PRIMARY KEY (asset_uuid),
+    CONSTRAINT geometrie_assets_fkey FOREIGN KEY (asset_uuid)
+        REFERENCES public.assets (uuid) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_geometrie_geom ON public.geometrie USING GIST (geom);
 
 
 -- Table: public.bestekken
