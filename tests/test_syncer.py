@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest import mock
 
 from arangodbtopostgis.syncer import BaseSyncer
@@ -20,12 +21,14 @@ class _DummySyncer(BaseSyncer):
 def test_field_map_defaults_applied() -> None:
     syncer = _DummySyncer()
     row = syncer._transform({"uuid": "abc", "naam": "Test"})
+    assert row is not None
     assert row == {"uuid": "abc", "naam": "Test", "actief": True}
 
 
 def test_field_map_keeps_existing_actief() -> None:
     syncer = _DummySyncer()
     row = syncer._transform({"uuid": "abc", "naam": "Test", "actief": False})
+    assert row is not None
     assert row["actief"] is False
 
 
@@ -77,12 +80,12 @@ def test_required_columns_skip_invalid_rows() -> None:
         REQUIRED_COLUMNS = ("uuid", "naam")
 
     syncer = _StrictSyncer()
-    docs = [
+    docs: list[dict[str, Any]] = [
         {"uuid": "1", "naam": "ok"},
         {"uuid": "2", "naam": None},
         {"uuid": None, "naam": "no"},
     ]
     rows = [syncer._transform(d) for d in docs]
-    valid = [r for r in rows if syncer._is_valid(r)]
+    valid = [r for r in rows if r is not None and syncer._is_valid(r)]
     assert len(valid) == 1
     assert valid[0]["uuid"] == "1"
