@@ -83,7 +83,6 @@ class BetrokkenerelatiesSyncer:
         "bron_asset_uuid": "bron_asset_uuid",
         "bron_agent_uuid": "bron_agent_uuid",
         "doel_agent_uuid": "doel_agent_uuid",
-        "relatietype_uuid": "relatietype_uuid",
         "rol": "rol",
         "bron_type": "bron_type",
         "doel_type": "doel_type",
@@ -142,6 +141,8 @@ class BetrokkenerelatiesSyncer:
     @staticmethod
     def _remaining_attributes(doc: dict[str, Any]) -> Jsonb | None:
         remaining = {k: v for k, v in doc.items() if k not in EXCLUDED_ATTRIBUTE_KEYS}
+        if remaining == {"HeeftBetrokkene_specifiekeContactinfo": []}:
+            return None
         return Jsonb(remaining) if remaining else None
 
     def _transform(self, doc: dict[str, Any]) -> dict[str, Any] | None:
@@ -174,7 +175,6 @@ class BetrokkenerelatiesSyncer:
             "bron_asset_uuid": bron_asset,
             "bron_agent_uuid": bron_agent,
             "doel_agent_uuid": doel_agent,
-            "relatietype_uuid": self._resolve_relatietype(doc),
             "rol": rol if isinstance(rol, str) and rol else None,
             "bron_type": bron_obj.get("@type") if isinstance(bron_obj, dict) else None,
             "doel_type": doel_obj.get("@type") if isinstance(doel_obj, dict) else None,
@@ -255,6 +255,11 @@ class BetrokkenerelatiesSyncer:
                     skipped_db += skip
                     batch = []
                     batch_n += 1
+                    if batch_n % 100 == 0:
+                        logger.info(
+                            f"{self.__class__.__name__}: progress fetched={fetched} "
+                            f"inserted={inserted} skipped_db={skipped_db} cursor={last_key}"
+                        )
             if batch or last_key != after:
                 ins, skip = self._insert_batch_and_checkpoint(conn, batch, last_key)
                 inserted += ins

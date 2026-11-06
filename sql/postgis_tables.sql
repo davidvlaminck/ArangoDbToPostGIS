@@ -332,7 +332,6 @@ CREATE TABLE IF NOT EXISTS public.assetrelaties
     uuid uuid NOT NULL,
     bron_asset_uuid uuid NOT NULL,
     doel_asset_uuid uuid NOT NULL,
-    relatietype_uuid uuid,
     bron_type text,
     doel_type text,
     type_uri text,
@@ -411,7 +410,6 @@ CREATE TABLE IF NOT EXISTS public.betrokkenerelaties
     bron_asset_uuid uuid,
     bron_agent_uuid uuid,
     doel_agent_uuid uuid NOT NULL,
-    relatietype_uuid uuid,
     rol text,
     bron_type text,
     doel_type text,
@@ -426,7 +424,6 @@ CREATE TABLE IF NOT EXISTS public.betrokkenerelaties
 CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_bron_asset ON public.betrokkenerelaties (bron_asset_uuid);
 CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_bron_agent ON public.betrokkenerelaties (bron_agent_uuid);
 CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_doel_agent ON public.betrokkenerelaties (doel_agent_uuid);
-CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_relatietype ON public.betrokkenerelaties (relatietype_uuid);
 
 DO $$
 BEGIN
@@ -455,14 +452,6 @@ BEGIN
 EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
 END $$;
 
-DO $$
-BEGIN
-    ALTER TABLE IF EXISTS public.betrokkenerelaties
-        ADD CONSTRAINT betrokkenerelaties_relatietype_fkey
-        FOREIGN KEY (relatietype_uuid) REFERENCES public.relatietypes (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION ON DELETE NO ACTION NOT VALID;
-EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
-END $$;
 
 DO $$
 BEGIN

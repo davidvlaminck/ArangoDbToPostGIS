@@ -6,7 +6,7 @@ import logging
 import sys
 
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
-from arangodbtopostgis.resume import RESUMABLE_STEPS, STEP_ORDER, prepare_step
+from arangodbtopostgis.resume import RESUMABLE_STEPS, STEP_ORDER, get_param, prepare_step
 from arangodbtopostgis.setup_postgis_tables import ensure_tables
 from arangodbtopostgis.sync_agents import AgentsSyncer
 from arangodbtopostgis.sync_assetrelaties import AssetrelatiesSyncer
@@ -125,6 +125,14 @@ def fill_database() -> None:
         AssetrelatiesSyncer(),
         BetrokkenerelatiesSyncer(),
     ]
+    conn0 = get_postgis_connection("prd")
+    try:
+        param = get_param(conn0, "sync_current_step")
+    finally:
+        conn0.close()
+    current = param.get("value_text") if param else None
+    start = STEP_ORDER.index(current) if current in STEP_ORDER else 0
+    syncers = syncers[start:]
     for syncer in syncers:
         step = getattr(syncer, "RESUME_STEP", syncer.ARANGO_COLLECTION)
         if step not in STEP_ORDER:
