@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS public.assets
 (
     uuid uuid NOT NULL,
     assettype uuid,                        -- full assettype uuid (resolved from Arango assettype_key)
+    actief boolean NOT NULL,
     asset_id_identificator text,
     asset_id_toegekend_door text,
     type_uri text,

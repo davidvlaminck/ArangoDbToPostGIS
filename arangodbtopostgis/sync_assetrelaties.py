@@ -21,6 +21,7 @@ Mapping choices
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from typing import Any
 
@@ -29,6 +30,8 @@ from psycopg.types.json import Jsonb
 
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
 from arangodbtopostgis.resume import mark_step_done, save_cursor_and_commit
+
+logger = logging.getLogger(__name__)
 
 EXCLUDED_ATTRIBUTE_KEYS = {
     "_id",
@@ -118,7 +121,7 @@ class AssetrelatiesSyncer:
                 self._rt_by_key[str(key)] = uuid
             if uri:
                 self._rt_by_uri[str(uri)] = uuid
-        print(
+        logger.info(
             f"{self.__class__.__name__}: loaded {len(self._rt_by_key)} relatietype key mappings, "
             f"{len(self._rt_by_uri)} uri mappings"
         )
@@ -197,7 +200,7 @@ class AssetrelatiesSyncer:
                         cur.execute("ROLLBACK TO SAVEPOINT ar_row")
                         skipped += 1
                         if skipped <= 10:
-                            print(
+                            logger.warning(
                                 f"{self.__class__.__name__}: skipped {row.get('uuid')} "
                                 f"(bron={row.get('bron_asset_uuid')} doel={row.get('doel_asset_uuid')}): {exc}"
                             )
@@ -240,7 +243,7 @@ class AssetrelatiesSyncer:
                 if row is None or not all(row.get(c) is not None and row.get(c) != "" for c in self.REQUIRED_COLUMNS):
                     skipped_invalid += 1
                     if skipped_invalid <= 10 and row is not None and not row.get("relatietype_uuid"):
-                        print(
+                        logger.info(
                             f"{self.__class__.__name__}: skipped {row.get('uuid')} "
                             f"(unresolved relatietype key={doc.get('relatietype_key')} "
                             f"type={doc.get('RelatieObject_typeURI') or doc.get('@type')})"
@@ -255,7 +258,7 @@ class AssetrelatiesSyncer:
                     batch = []
                     batch_n += 1
                     if batch_n % 100 == 0:
-                        print(
+                        logger.info(
                             f"{self.__class__.__name__}: progress fetched={fetched} "
                             f"inserted={inserted} skipped_db={skipped_db} cursor={last_key}"
                         )
@@ -266,7 +269,7 @@ class AssetrelatiesSyncer:
             mark_step_done(conn, self.RESUME_STEP)
         finally:
             conn.close()
-        print(
+        logger.info(
             f"{self.__class__.__name__}: fetched {fetched} from '{self.ARANGO_COLLECTION}'"
             + (f" (limit={self.limit})" if self.limit else "")
             + (f", {skipped_invalid} skipped (invalid/missing relatietype)" if skipped_invalid else "")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
@@ -17,6 +18,16 @@ from arangodbtopostgis.sync_bestekkoppelingen import BestekkoppelingenSyncer
 from arangodbtopostgis.sync_identiteiten import IdentiteitenSyncer
 from arangodbtopostgis.sync_relatietypes import RelatietypesSyncer
 from arangodbtopostgis.sync_toezichtgroepen import ToezichtgroepenSyncer
+
+logger = logging.getLogger(__name__)
+
+
+def _configure_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S%z",
+    )
 
 
 def _postgis_install_instructions(dbname: str, user: str, exc: Exception) -> str:
@@ -55,7 +66,7 @@ def check_postgis_access() -> bool:
                         c2.execute("SELECT 1 FROM pg_extension WHERE extname = 'postgis'")
                         if c2.fetchone() is None:
                             raise RuntimeError("CREATE EXTENSION reported success but postgis not found")
-                    print("PostGIS access OK (enabled 'postgis' extension)")
+                    logger.info("PostGIS access OK (enabled 'postgis' extension)")
                     return True
                 except Exception as exc:
                     try:
@@ -64,16 +75,16 @@ def check_postgis_access() -> bool:
                         pass
                     dbname = conn.info.dbname if conn.info else "awvinfra"
                     user = conn.info.user if conn.info else "unknown"
-                    print("PostGIS access FAILED: PostGIS extension missing.")
-                    print(_postgis_install_instructions(dbname, user, exc))
+                    logger.warning("PostGIS access FAILED: PostGIS extension missing.")
+                    logger.error(_postgis_install_instructions(dbname, user, exc))
                     return False
     except Exception as exc:
-        print(f"PostGIS access FAILED: {exc}")
+        logger.warning(f"PostGIS access FAILED: {exc}")
         return False
     finally:
         if conn is not None:
             conn.close()
-    print("PostGIS access OK (extension 'postgis' present)")
+    logger.info("PostGIS access OK (extension 'postgis' present)")
     return True
 
 
@@ -83,9 +94,9 @@ def check_arango_access() -> bool:
         db = get_arango_db("dev")
         db.collections()
     except Exception as exc:
-        print(f"ArangoDB access FAILED: {exc}")
+        logger.warning(f"ArangoDB access FAILED: {exc}")
         return False
-    print("ArangoDB access OK")
+    logger.info("ArangoDB access OK")
     return True
 
 
@@ -130,10 +141,11 @@ def fill_database() -> None:
 
 
 def main() -> None:
+    _configure_logging()
     postgis_ok = check_postgis_access()
     arango_ok = check_arango_access()
     if not postgis_ok or not arango_ok:
-        print("Aborting: database access check failed.")
+        logger.warning("Aborting: database access check failed.")
         sys.exit(1)
 
     setup_postgis_tables()

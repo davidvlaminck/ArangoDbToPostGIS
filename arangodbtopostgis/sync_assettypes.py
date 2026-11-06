@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from arangodbtopostgis.syncer import BaseSyncer
+
+logger = logging.getLogger(__name__)
 
 
 class AssettypesSyncer(BaseSyncer):

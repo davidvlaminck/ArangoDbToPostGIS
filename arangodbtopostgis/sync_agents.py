@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 import json
 from typing import Any
 
 from arangodbtopostgis.syncer import BaseSyncer
+
+logger = logging.getLogger(__name__)
 
 
 class AgentsSyncer(BaseSyncer):

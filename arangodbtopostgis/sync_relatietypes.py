@@ -6,9 +6,13 @@ addressable by a stable identifier.
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 
 from arangodbtopostgis.syncer import BaseSyncer
+
+logger = logging.getLogger(__name__)
 
 
 class RelatietypesSyncer(BaseSyncer):

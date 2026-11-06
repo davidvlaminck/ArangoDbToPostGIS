@@ -7,9 +7,12 @@ cleanly.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import psycopg
+
+logger = logging.getLogger(__name__)
 
 SQL_FILE: Path = Path(__file__).resolve().parents[1] / "sql" / "postgis_tables.sql"
 
@@ -56,7 +59,7 @@ def drop_managed_tables(conn: psycopg.Connection) -> None:
         with conn.cursor() as cur:
             cur.execute(f"DROP TABLE IF EXISTS public.{_qident(table)} CASCADE")
     conn.commit()
-    print(f"Dropped managed tables: {', '.join(MANAGED_TABLES)}")
+    logger.info(f"Dropped managed tables: {', '.join(MANAGED_TABLES)}")
 
 
 def create_tables(conn: psycopg.Connection) -> None:
@@ -64,7 +67,7 @@ def create_tables(conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(sql)
     conn.commit()
-    print(f"Created managed tables from {SQL_FILE.name}: {', '.join(MANAGED_TABLES)}")
+    logger.info(f"Created managed tables from {SQL_FILE.name}: {', '.join(MANAGED_TABLES)}")
 
 
 def ensure_tables(conn: psycopg.Connection) -> None:
@@ -72,19 +75,19 @@ def ensure_tables(conn: psycopg.Connection) -> None:
     if not table_exists(conn, "params"):
         existing = [t for t in MANAGED_TABLES if t != "params" and table_exists(conn, t)]
         if existing:
-            print(
+            logger.info(
                 "Sentinel table 'params' is missing; dropping and recreating all managed tables "
                 f"(existing: {', '.join(existing)})."
             )
         else:
-            print("Sentinel table 'params' is missing; creating managed tables.")
+            logger.info("Sentinel table 'params' is missing; creating managed tables.")
         drop_managed_tables(conn)
         create_tables(conn)
         return
 
     missing = [t for t in MANAGED_TABLES if not table_exists(conn, t)]
     if not missing:
-        print("All managed tables already exist — nothing to create.")
+        logger.info("All managed tables already exist — nothing to create.")
         return
 
     # params exists but others are missing: create via idempotent SQL without dropping.
@@ -92,7 +95,7 @@ def ensure_tables(conn: psycopg.Connection) -> None:
     with conn.cursor() as cur:
         cur.execute(sql)
     conn.commit()
-    print(f"Created missing tables: {', '.join(missing)}")
+    logger.info(f"Created missing tables: {', '.join(missing)}")
 
 
 def main() -> None:

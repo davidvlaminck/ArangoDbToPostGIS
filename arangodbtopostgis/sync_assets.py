@@ -10,6 +10,7 @@ for a full sync.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 from datetime import date, datetime
 from typing import Any
@@ -20,6 +21,8 @@ from psycopg.types.json import Jsonb
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
 from arangodbtopostgis.resume import mark_step_done, save_cursor_and_commit
 from arangodbtopostgis.syncer import BaseSyncer
+
+logger = logging.getLogger(__name__)
 
 NS_COLUMNS = ("geo", "wkt", "loc", "grp", "wl", "bz", "tz", "lgc", "ins", "ond", "vtc")
 
@@ -57,7 +60,7 @@ class AssetsSyncer(BaseSyncer):
         db = get_arango_db(self.arango_env)
         cursor = db.aql.execute("FOR at IN assettypes RETURN {_key: at._key, uuid: at.uuid}")
         self._assettype_key_to_uuid = {d["_key"]: d["uuid"] for d in cursor if d.get("_key") and d.get("uuid")}
-        print(f"{self.__class__.__name__}: loaded {len(self._assettype_key_to_uuid)} assettype mappings")
+        logger.info(f"{self.__class__.__name__}: loaded {len(self._assettype_key_to_uuid)} assettype mappings")
 
     def fetch(self) -> list[dict[str, Any]]:
         return []
@@ -87,7 +90,7 @@ class AssetsSyncer(BaseSyncer):
                     inserted += 1
                 except Exception as exc:
                     cur.execute("ROLLBACK TO SAVEPOINT geom_row")
-                    print(f"{self.__class__.__name__}: skipped geometry for {row['asset_uuid']}: {exc}")
+                    logger.warning(f"{self.__class__.__name__}: skipped geometry for {row['asset_uuid']}: {exc}")
         if commit:
             conn.commit()
         return inserted
@@ -109,12 +112,12 @@ class AssetsSyncer(BaseSyncer):
                 raise RuntimeError("no matching columns found for assets sync")
             extra = sorted(set(self.FIELD_MAP) - set(field_map))
             if extra:
-                print(f"{self.__class__.__name__}: skipping unmapped/missing columns: {extra}")
+                logger.info(f"{self.__class__.__name__}: skipping unmapped/missing columns: {extra}")
             with conn.cursor() as cur:
                 cur.execute("SELECT to_regclass('public.geometrie')")
                 has_geometrie = cur.fetchone()[0] is not None
             if not has_geometrie:
-                print(f"{self.__class__.__name__}: public.geometrie missing; geometry sync skipped")
+                logger.info(f"{self.__class__.__name__}: public.geometrie missing; geometry sync skipped")
 
             fetched = inserted = geom_inserted = unknown_types = batch_n = 0
             batch: list[dict[str, Any]] = []
@@ -141,7 +144,7 @@ class AssetsSyncer(BaseSyncer):
                     geom_batch = []
                     batch_n += 1
                     if batch_n % 50 == 0:
-                        print(f"{self.__class__.__name__}: progress fetched={fetched} inserted={inserted} geometrie={geom_inserted} cursor={last_key}")
+                        logger.info(f"{self.__class__.__name__}: progress fetched={fetched} inserted={inserted} geometrie={geom_inserted} cursor={last_key}")
             if batch or last_key != after:
                 self._commit_asset_batch(conn, field_map, batch, geom_batch if has_geometrie else [], last_key)
                 inserted += len(batch)
@@ -149,7 +152,7 @@ class AssetsSyncer(BaseSyncer):
             mark_step_done(conn, self.RESUME_STEP)
         finally:
             conn.close()
-        print(
+        logger.info(
             f"{self.__class__.__name__}: fetched {fetched} from '{self.ARANGO_COLLECTION}'"
             + (f" (limit={self.limit})" if self.limit else "")
             + (f", {unknown_types} with unresolved assettype" if unknown_types else "")

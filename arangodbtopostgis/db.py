@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 
 import psycopg
 from arango import ArangoClient
 
 from arangodbtopostgis.config import arango_creds, postgis_creds
+
+logger = logging.getLogger(__name__)
 
 
 def get_arango_client(env: str = "dev") -> ArangoClient:

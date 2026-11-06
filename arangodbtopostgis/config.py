@@ -6,9 +6,13 @@ Secrets are read at runtime; nothing is hard-coded here.
 
 from __future__ import annotations
 
+import logging
+
 import json
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 CONFIG_DIR: Path = Path(__file__).resolve().parents[2] / "config"
 
