@@ -1,16 +1,28 @@
-import sys
+"""Ensure PostGIS tables exist before syncing data."""
+
+from __future__ import annotations
+
 from pathlib import Path
 
-# Allow running as: python3 scripts/setup_postgis_tables.py
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
 import psycopg
-from read_creds import postgis_creds
 
-SQL_FILE = Path(__file__).resolve().parents[1] / "sql" / "postgis_tables.sql"
+SQL_FILE: Path = Path(__file__).resolve().parents[2] / "sql" / "postgis_tables.sql"
+
+# Tables this module is responsible for creating.
+MANAGED_TABLES: tuple[str, ...] = (
+    "params",
+    "agents",
+    "assettypes",
+    "bestekken",
+    "beheerders",
+    "toezichtgroepen",
+    "identiteiten",
+    "relatietypes",
+)
 
 
-def table_exists(conn, table_name: str) -> bool:
+def table_exists(conn: psycopg.Connection, table_name: str) -> bool:
+    """Return ``True`` when ``table_name`` exists in the public schema."""
     with conn.cursor() as cur:
         cur.execute(
             "SELECT EXISTS ("
@@ -22,18 +34,8 @@ def table_exists(conn, table_name: str) -> bool:
         return cur.fetchone()[0]
 
 
-MANAGED_TABLES = [
-    "params",
-    "agents",
-    "assettypes",
-    "bestekken",
-    "beheerders",
-    "toezichtgroepen",
-    "identiteiten",
-    "relatietypes",
-]
-
-def ensure_tables(conn) -> None:
+def ensure_tables(conn: psycopg.Connection) -> None:
+    """Create any managed tables that are missing."""
     missing = [t for t in MANAGED_TABLES if not table_exists(conn, t)]
     if not missing:
         print("All managed tables already exist — nothing to create.")
@@ -47,14 +49,9 @@ def ensure_tables(conn) -> None:
 
 
 def main() -> None:
-    creds = postgis_creds("prd")
-    conn = psycopg.connect(
-        host=creds["host"],
-        port=creds["port"],
-        dbname=creds["database"],
-        user=creds["user"],
-        password=creds["password"],
-    )
+    from arangodbtopostgis.db import get_postgis_connection
+
+    conn = get_postgis_connection("prd")
     try:
         ensure_tables(conn)
     finally:

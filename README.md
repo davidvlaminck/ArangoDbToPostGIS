@@ -2,83 +2,48 @@
 
 The idea of this repo is to copy the data from a ArangoDb to a PostGIS db.
 
-## Database access
+## Project layout
 
-Credentials live in the `config` folder (one level up from this repo).
-**Non-remote** config files only (`*_remote.json` excluded).
-
-| Database | Config file | Environment |
-|----------|-------------|-------------|
-| ArangoDB | `config/settings_arangodb.json` | `dev` |
-| PostGIS  | `config/settings_postgis.json`  | `prd` |
-
-### Connection parameters (secrets read from config, not stored here)
-
-**ArangoDB (dev)** — from `config/settings_arangodb.json` → `databases.dev`
-- endpoint: `http://127.0.0.1:8529`
-- database: `infra_db`
-- user: `sync_user`
-- password: read from config at runtime
-
-**PostGIS (prd)** — from `config/settings_postgis.json` → `databases.prd`
-- host: `127.0.0.1`
-- port: `5432`
-- database: `awvinfra`
-- user: `awvinfrasync`
-- password: read from config at runtime
-
-### Credential reader script
-
-`scripts/read_creds.py` — loads credentials from the config JSON files (no secrets hard-coded):
-
-```python
-import json
-from pathlib import Path
-
-CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
-
-
-def load_json(name: str) -> dict:
-    with open(CONFIG_DIR / name) as f:
-        return json.load(f)
-
-
-def arango_creds(env: str = "dev") -> dict:
-    cfg = load_json("settings_arangodb.json")
-    db = cfg["databases"][env]
-    return {
-        "hosts": db.get("hosts", "http://127.0.0.1:8529"),
-        "database": db["database"],
-        "username": db["user"],
-        "password": db["password"],
-    }
-
-
-def postgis_creds(env: str = "prd") -> dict:
-    cfg = load_json("settings_postgis.json")
-    db = cfg["databases"][env]
-    return {
-        "host": db["host"],
-        "port": db["port"],
-        "database": db["database"],
-        "user": db["user"],
-        "password": db["password"],
-    }
-
-
-if __name__ == "__main__":
-    print("ArangoDB:", arango_creds())
-    print("PostGIS :", postgis_creds())
+```
+arangodbtopostgis/
+├── __init__.py        # Package exports
+├── __main__.py        # python -m arangodbtopostgis
+├── config.py          # Credential loading from JSON config files
+├── db.py              # Connection helpers + batched upsert utility
+├── syncer.py          # BaseSyncer base class (generic Arango→PostGIS sync)
+├── main.py            # Entry point: checks, table setup, runs all syncers
+├── setup_postgis_tables.py  # Ensures PostGIS tables exist
+├── sync_agents.py
+├── sync_assettypes.py
+├── sync_beheerders.py
+├── sync_bestekken.py
+├── sync_identiteiten.py
+├── sync_relatietypes.py
+└── sync_toezichtgroepen.py
+sql/postgis_tables.sql
+tests/                 # pytest unit tests
+pyproject.toml         # Dependencies + ruff/pytest config
 ```
 
-Usage:
+Each `sync_*.py` module defines a `*Syncer` subclass of `BaseSyncer` with a
+`FIELD_MAP` (Arango field → PostGIS column). Subclasses may override
+`_transform()` for custom field extraction.
+
+## Running
+
 ```bash
-python3 scripts/read_creds.py
-```
+# Install dependencies
+uv sync
 
-Access commands (read-only, passwords supplied via the script above):
-- PostGIS: `PGPASSWORD=<from script> psql -h 127.0.0.1 -p 5432 -U awvinfrasync -d awvinfra -c "\dt"`
-- ArangoDB: Python `arango` driver, `ArangoClient(hosts='http://127.0.0.1:8529').db('infra_db', username='sync_user', password=...)`
+# Run the full pipeline
+python -m arangodbtopostgis
+
+# Run a single syncer
+python -m arangodbtopostgis.sync_toezichtgroepen
+
+# Run tests
+uv run pytest
+```
 
 ---
 
