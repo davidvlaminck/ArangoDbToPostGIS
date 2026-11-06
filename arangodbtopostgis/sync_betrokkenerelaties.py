@@ -15,12 +15,14 @@ Mapping choices
 from __future__ import annotations
 
 import argparse
+import csv
+import io
+import json
 import logging
 import os
 import time
 from typing import Any
 
-from psycopg.extras import execute_values
 from psycopg.types.json import Jsonb
 
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
@@ -188,28 +190,44 @@ class BetrokkenerelatiesSyncer:
         }
 
     def _insert_batch_and_checkpoint(self, conn: Any, rows: list[dict[str, Any]], cursor: str | None) -> tuple[int, int]:
-        """Bulk insert via execute_values; fall back to per-row for FK/constraint errors."""
+        """Bulk insert via COPY; fall back to per-row for FK/constraint errors."""
         if not rows and cursor is None:
             return 0, 0
         columns = list(self.FIELD_MAP.values())
         col_list = ", ".join(_qident(c) for c in columns)
-        sql = f"INSERT INTO {_qtable(self.POSTGIS_TABLE)} ({col_list}) VALUES %s"
+        sql = f'COPY {_qtable(self.POSTGIS_TABLE)} ({col_list}) FROM STDIN WITH (FORMAT csv)'
+
+        def sanitize(value: Any) -> Any:
+            if value == "":
+                return None
+            if hasattr(value, "obj"):
+                value = value.obj
+            if isinstance(value, (dict, list)):
+                return json.dumps(value)
+            return value
+
+        def row_csv(row: dict[str, Any]) -> str:
+            out = io.StringIO()
+            csv.writer(out).writerow([sanitize(row.get(c)) for c in columns])
+            return out.getvalue()
+
         inserted = skipped = 0
         try:
             with conn.cursor() as cur:
                 try:
-                    execute_values(
-                        cur,
-                        sql,
-                        [[_sanitize(row.get(col)) for col in columns] for row in rows],
-                        page_size=len(rows),
-                    )
+                    logger.info(f"{self.__class__.__name__}: using COPY for {len(rows)} rows")
+                    with cur.copy(sql) as copy:
+                        for row in rows:
+                            copy.write(row_csv(row))
                     inserted = len(rows)
-                except Exception:
+                except Exception as exc:
+                    logger.warning(f"{self.__class__.__name__}: COPY failed, falling back to per-row insert: {exc}")
                     cur.execute("ROLLBACK")
-                    single_sql = f"INSERT INTO {_qtable(self.POSTGIS_TABLE)} ({col_list}) VALUES (" + ", ".join(["%s"] * len(columns)) + ")"
+                    single_sql = f'INSERT INTO {_qtable(self.POSTGIS_TABLE)} ({col_list}) VALUES (" + ", ".join(["%s"] * len(columns)) + ")'
+                    single_sql = "INSERT INTO {} ({}) VALUES ({})".format(
+                        self.POSTGIS_TABLE, col_list, ", ".join(["%s"] * len(columns)))
                     for row in rows:
-                        params = [_sanitize(row.get(col)) for col in columns]
+                        params = [sanitize(row.get(col)) for col in columns]
                         try:
                             cur.execute(single_sql, params)
                             inserted += 1
@@ -223,7 +241,6 @@ class BetrokkenerelatiesSyncer:
             conn.rollback()
             raise
         return inserted, skipped
-
 
     _upsert_batch = _insert_batch_and_checkpoint
 

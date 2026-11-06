@@ -332,6 +332,7 @@ CREATE TABLE IF NOT EXISTS public.assetrelaties
     uuid uuid NOT NULL,
     bron_asset_uuid uuid NOT NULL,
     doel_asset_uuid uuid NOT NULL,
+    relatietype_uuid uuid,
     bron_type text,
     doel_type text,
     type_uri text,

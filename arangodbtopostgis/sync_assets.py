@@ -10,13 +10,16 @@ for a full sync.
 from __future__ import annotations
 
 import argparse
+import csv
+import io
+import json
 import logging
 import os
+import time
 from datetime import date, datetime
 from typing import Any
 
 import psycopg
-from psycopg.extras import execute_values
 from psycopg.types.json import Jsonb
 
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
@@ -99,6 +102,7 @@ class AssetsSyncer(BaseSyncer):
     def run_resumable(self, resume_cursor: str | None = None) -> int:
         self._load_assettype_lookup()
         db = get_arango_db(self.arango_env)
+        t0 = time.perf_counter()
         after = None if resume_cursor in (None, "", "__DONE__") else resume_cursor
         bind: dict[str, Any] = {"after": after or ""}
         limit_clause = "LIMIT @limit" if self.limit else ""
@@ -159,6 +163,7 @@ class AssetsSyncer(BaseSyncer):
             + (f" (limit={self.limit})" if self.limit else "")
             + (f", {unknown_types} with unresolved assettype" if unknown_types else "")
             + f"; inserted {inserted} into {self.POSTGIS_TABLE}, {geom_inserted} into public.geometrie"
+            + f" in {time.perf_counter()-t0:.1f}s"
         )
         return inserted
 
@@ -181,10 +186,47 @@ class AssetsSyncer(BaseSyncer):
         columns = list(field_map.values())
         col_list = ", ".join('"' + c.replace('"', '""') + '"' for c in columns)
         table = ".".join('"' + part.replace('"', '""') + '"' for part in self.POSTGIS_TABLE.split("."))
-        sql = f"INSERT INTO {table} ({col_list}) VALUES %s"
-        params = [[None if row.get(col) == "" else row.get(col) for col in columns] for row in rows]
-        with conn.cursor() as cur:
-            execute_values(cur, sql, params, page_size=len(params))
+        sql = f'COPY {table} ({col_list}) FROM STDIN WITH (FORMAT csv)'
+
+        def sanitize(value: Any) -> Any:
+            if value == "":
+                return None
+            if hasattr(value, "obj"):
+                value = value.obj
+            if isinstance(value, (dict, list)):
+                return json.dumps(value)
+            return value
+
+        def row_csv(row: dict[str, Any]) -> str:
+            out = io.StringIO()
+            csv.writer(out).writerow([sanitize(row.get(c)) for c in columns])
+            return out.getvalue()
+
+        inserted = 0
+        try:
+            with conn.cursor() as cur:
+                try:
+                    # logger.info(f"{self.__class__.__name__}: using COPY for {len(rows)} rows")
+                    with cur.copy(sql) as copy:
+                        for row in rows:
+                            copy.write(row_csv(row))
+                    inserted = len(rows)
+                except Exception as exc:
+                    logger.warning(f"{self.__class__.__name__}: COPY failed, falling back to per-row insert: {exc}")
+                    cur.execute("ROLLBACK")
+                    single_sql = "INSERT INTO {} ({}) VALUES ({})".format(
+                        table, col_list, ", ".join(["%s"] * len(columns)))
+                    for row in rows:
+                        params = [sanitize(row.get(col)) for col in columns]
+                        try:
+                            cur.execute(single_sql, params)
+                            inserted += 1
+                        except Exception:
+                            cur.execute("ROLLBACK")
+        except Exception:
+            conn.rollback()
+            raise
+        return inserted
 
     def run(self) -> int:
         return self.run_resumable(None)
