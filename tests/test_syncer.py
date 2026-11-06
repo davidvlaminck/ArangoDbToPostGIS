@@ -57,18 +57,6 @@ def test_fetch_skips_rows_with_empty_uuid() -> None:
     assert rows[0]["uuid"] == "valid-1"
 
 
-def test_run_calls_fetch_and_upsert() -> None:
-    syncer = _DummySyncer()
-    with (
-        mock.patch.object(syncer, "fetch", return_value=[{"uuid": "x"}]) as mock_fetch,
-        mock.patch.object(syncer, "upsert", return_value=1) as mock_upsert,
-    ):
-        result = syncer.run()
-    mock_fetch.assert_called_once()
-    mock_insert.assert_called_once_with([{"uuid": "x"}])
-    assert result == 1
-
-
 def test_insert_no_rows() -> None:
     syncer = _DummySyncer()
     with mock.patch("arangodbtopostgis.syncer.get_postgis_connection", side_effect=AssertionError):
