@@ -15,8 +15,12 @@ Mapping choices
 from __future__ import annotations
 
 import argparse
+import csv
+import io
+import json
 import logging
 import os
+import time
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -186,27 +190,52 @@ class BetrokkenerelatiesSyncer:
         }
 
     def _insert_batch_and_checkpoint(self, conn: Any, rows: list[dict[str, Any]], cursor: str | None) -> tuple[int, int]:
+        """Bulk insert via COPY; fall back to per-row for FK/constraint errors."""
         if not rows and cursor is None:
             return 0, 0
         columns = list(self.FIELD_MAP.values())
         col_list = ", ".join(_qident(c) for c in columns)
-        placeholders = ", ".join(["%s"] * len(columns))
-        sql = f"INSERT INTO {_qtable(self.POSTGIS_TABLE)} ({col_list}) VALUES ({placeholders})"
+        sql = f'COPY {_qtable(self.POSTGIS_TABLE)} ({col_list}) FROM STDIN WITH (FORMAT csv)'
+
+        def sanitize(value: Any) -> Any:
+            if value == "":
+                return None
+            if hasattr(value, "obj"):
+                value = value.obj
+            if isinstance(value, (dict, list)):
+                return json.dumps(value)
+            return value
+
+        def row_csv(row: dict[str, Any]) -> str:
+            out = io.StringIO()
+            csv.writer(out).writerow([sanitize(row.get(c)) for c in columns])
+            return out.getvalue()
+
         inserted = skipped = 0
         try:
             with conn.cursor() as cur:
-                for row in rows:
-                    params = [_sanitize(row.get(col)) for col in columns]
-                    try:
-                        cur.execute("SAVEPOINT ar_row")
-                        cur.execute(sql, params)
-                        cur.execute("RELEASE SAVEPOINT ar_row")
-                        inserted += 1
-                    except Exception as exc:
-                        cur.execute("ROLLBACK TO SAVEPOINT ar_row")
-                        skipped += 1
-                        if skipped <= 10:
-                            logger.warning(f"{self.__class__.__name__}: skipped {row.get('uuid')}: {exc}")
+                try:
+                    logger.info(f"{self.__class__.__name__}: using COPY for {len(rows)} rows")
+                    with cur.copy(sql) as copy:
+                        for row in rows:
+                            copy.write(row_csv(row))
+                    inserted = len(rows)
+                except Exception as exc:
+                    logger.warning(f"{self.__class__.__name__}: COPY failed, falling back to per-row insert: {exc}")
+                    cur.execute("ROLLBACK")
+                    single_sql = f'INSERT INTO {_qtable(self.POSTGIS_TABLE)} ({col_list}) VALUES (" + ", ".join(["%s"] * len(columns)) + ")'
+                    single_sql = "INSERT INTO {} ({}) VALUES ({})".format(
+                        self.POSTGIS_TABLE, col_list, ", ".join(["%s"] * len(columns)))
+                    for row in rows:
+                        params = [sanitize(row.get(col)) for col in columns]
+                        try:
+                            cur.execute(single_sql, params)
+                            inserted += 1
+                        except Exception as exc:
+                            cur.execute("ROLLBACK")
+                            skipped += 1
+                            if skipped <= 10:
+                                logger.warning(f"{self.__class__.__name__}: skipped {row.get('uuid')}: {exc}")
             save_cursor_and_commit(conn, self.RESUME_STEP, cursor)
         except Exception:
             conn.rollback()
@@ -219,6 +248,7 @@ class BetrokkenerelatiesSyncer:
         self._load_relatietype_lookups()
         self._load_agent_lookups()
         db = get_arango_db(self.arango_env)
+        t0 = time.perf_counter()
         after = None if resume_cursor in (None, "", "__DONE__") else resume_cursor
         bind: dict[str, Any] = {"after": after or ""}
         limit_clause = "LIMIT @limit" if self.limit else ""
@@ -267,7 +297,8 @@ class BetrokkenerelatiesSyncer:
             mark_step_done(conn, self.RESUME_STEP)
         finally:
             conn.close()
-        logger.info(f"{self.__class__.__name__}: fetched {fetched}; inserted {inserted}")
+        elapsed = time.perf_counter() - t0
+        logger.info(f"{self.__class__.__name__}: fetched {fetched}; inserted {inserted} in {elapsed:.1f}s")
         return inserted
 
     def run(self) -> int:
