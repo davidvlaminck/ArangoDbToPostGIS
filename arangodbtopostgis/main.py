@@ -7,6 +7,7 @@ import sys
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
 from arangodbtopostgis.setup_postgis_tables import ensure_tables
 from arangodbtopostgis.sync_agents import AgentsSyncer
+from arangodbtopostgis.sync_assetrelaties import AssetrelatiesSyncer
 from arangodbtopostgis.sync_assets import AssetsSyncer
 from arangodbtopostgis.sync_assettypes import AssettypesSyncer
 from arangodbtopostgis.sync_beheerders import BeheerdersSyncer
@@ -106,6 +107,7 @@ def fill_database() -> None:
         RelatietypesSyncer(),
         ToezichtgroepenSyncer(),
         AssetsSyncer(limit=None),
+        AssetrelatiesSyncer(),
     ]
     for syncer in syncers:
         syncer.run()

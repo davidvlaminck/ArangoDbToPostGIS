@@ -213,7 +213,7 @@ CREATE TABLE IF NOT EXISTS public.beheerders
     uuid uuid NOT NULL,
     naam text COLLATE pg_catalog."default" NOT NULL,
     referentie text COLLATE pg_catalog."default" NOT NULL,
-    typeBeheerder text COLLATE pg_catalog."default" NOT NULL,
+    type_beheerder text COLLATE pg_catalog."default" NOT NULL,
     actief boolean NOT NULL,
     CONSTRAINT beheerders_pkey PRIMARY KEY (uuid)
 );
@@ -317,3 +317,87 @@ CREATE TABLE IF NOT EXISTS public.relatietypes
     gericht boolean NOT NULL,
     CONSTRAINT relatietypes_pkey PRIMARY KEY (uuid)
 );
+
+
+-- Table: public.assetrelaties
+-- n-n directed relations between assets, derived from Arango edge collection `assetrelaties`.
+-- `bron_asset_uuid`/`doel_asset_uuid` come from edge `_from`/`_to` (assets/<uuid>).
+-- `relatietype_uuid` resolved from Arango `relatietype_key` (preferred) or type URI.
+-- Redundant `RelatieObject_bronAssetId`/`RelatieObject_doelAssetId` are excluded;
+-- `RelatieObject_assetId` is flattened; remaining unmapped fields go to `attributes`.
+
+CREATE TABLE IF NOT EXISTS public.assetrelaties
+(
+    uuid uuid NOT NULL,
+    bron_asset_uuid uuid NOT NULL,
+    doel_asset_uuid uuid NOT NULL,
+    relatietype_uuid uuid NOT NULL,
+    bron_type text,
+    doel_type text,
+    type_uri text,
+    asset_id_identificator text,
+    asset_id_toegekend_door text,
+    actief boolean,
+    attributes jsonb,
+    CONSTRAINT assetrelaties_pkey PRIMARY KEY (uuid)
+);
+
+-- For DBs where the table existed before relatietype_uuid became mandatory.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'assetrelaties'
+          AND column_name = 'relatietype_uuid' AND is_nullable = 'YES'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM public.assetrelaties WHERE relatietype_uuid IS NULL
+    ) THEN
+        ALTER TABLE public.assetrelaties
+            ALTER COLUMN relatietype_uuid SET NOT NULL;
+    END IF;
+EXCEPTION WHEN undefined_table OR undefined_column THEN
+    NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_bron ON public.assetrelaties (bron_asset_uuid);
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_doel ON public.assetrelaties (doel_asset_uuid);
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_relatietype ON public.assetrelaties (relatietype_uuid);
+
+DO $$
+BEGIN
+    ALTER TABLE IF EXISTS public.assetrelaties
+        ADD CONSTRAINT assetrelaties_bron_fkey
+        FOREIGN KEY (bron_asset_uuid)
+        REFERENCES public.assets (uuid) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE
+        NOT VALID;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE IF EXISTS public.assetrelaties
+        ADD CONSTRAINT assetrelaties_doel_fkey
+        FOREIGN KEY (doel_asset_uuid)
+        REFERENCES public.assets (uuid) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE
+        NOT VALID;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE IF EXISTS public.assetrelaties
+        ADD CONSTRAINT assetrelaties_relatietype_fkey
+        FOREIGN KEY (relatietype_uuid)
+        REFERENCES public.relatietypes (uuid) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION
+        NOT VALID;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN
+    NULL;
+END $$;

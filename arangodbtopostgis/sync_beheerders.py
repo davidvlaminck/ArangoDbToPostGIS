@@ -11,7 +11,7 @@ class BeheerdersSyncer(BaseSyncer):
     FIELD_MAP = {
         "uuid": "uuid",
         "naam": "naam",
-        "type": "typeBeheerder",
+        "type": "type_beheerder",
         "referentie": "referentie",
         "actief": "actief",
     }
