@@ -59,20 +59,19 @@ class AssetsSyncer(BaseSyncer):
         "uuid": "uuid",
         "assettype": "assettype",
         "actief": "actief",  # legacy NOT NULL column in existing DBs; mirrors isActief
-        "isActief": "isActief",
-        "assetId_identificator": "assetId_identificator",
-        "assetId_toegekendDoor": "assetId_toegekendDoor",
-        "typeURI": "typeURI",
+        "asset_id_identificator": "asset_id_identificator",
+        "asset_id_toegekend_door": "asset_id_toegekend_door",
+        "type_uri": "type_uri",
         "toestand": "toestand",
         "notitie": "notitie",
         "naam": "naam",
         "naampad": "naampad",
         "naampad_parts": "naampad_parts",
         "naampad_parent": "naampad_parent",
-        "assetVersie_context": "assetVersie_context",
-        "assetVersie_timestamp": "assetVersie_timestamp",
-        "assetVersie_versienummer": "assetVersie_versienummer",
-        "datumOprichtingObject": "datumOprichtingObject",
+        "asset_versie_context": "asset_versie_context",
+        "asset_versie_timestamp": "asset_versie_timestamp",
+        "asset_versie_versienummer": "asset_versie_versienummer",
+        "datum_oprichting_object": "datum_oprichting_object",
         **{ns: ns for ns in NS_COLUMNS},
         "attributes": "attributes",
     }
@@ -255,24 +254,23 @@ class AssetsSyncer(BaseSyncer):
             "uuid": doc.get("_key") or doc.get("uuid"),
             "assettype": self._resolve_assettype(doc),
             "actief": is_actief,
-            "isActief": is_actief,
-            "assetId_identificator": asset_id.get("DtcIdentificator_identificator"),
-            "assetId_toegekendDoor": asset_id.get("DtcIdentificator_toegekendDoor"),
-            "typeURI": doc.get("AIMObject_typeURI") or doc.get("@type"),
+            "asset_id_identificator": asset_id.get("DtcIdentificator_identificator"),
+            "asset_id_toegekend_door": asset_id.get("DtcIdentificator_toegekendDoor"),
+            "type_uri": doc.get("AIMObject_typeURI") or doc.get("@type"),
             "toestand": self._toestand(doc),
             "notitie": notitie,
             "naam": naam,
             "naampad": naampad,
             "naampad_parts": self._naampad_parts(doc),
             "naampad_parent": self._naampad_parent(doc),
-            "assetVersie_context": versie.get("DtcAssetVersie_context"),
-            "assetVersie_timestamp": versie.get("DtcAssetVersie_timestamp"),
-            "assetVersie_versienummer": (
+            "asset_versie_context": versie.get("DtcAssetVersie_context"),
+            "asset_versie_timestamp": versie.get("DtcAssetVersie_timestamp"),
+            "asset_versie_versienummer": (
                 str(versie["DtcAssetVersie_versienummer"])
                 if versie.get("DtcAssetVersie_versienummer") is not None
                 else None
             ),
-            "datumOprichtingObject": self._to_date(
+            "datum_oprichting_object": self._to_date(
                 doc.get("datumOprichtingObject") or doc.get("AIMObject_datumOprichtingObject")
             ),
         }

@@ -71,20 +71,19 @@ CREATE TABLE IF NOT EXISTS public.assets
 (
     uuid uuid NOT NULL,
     assettype uuid,                        -- full assettype uuid (resolved from Arango assettype_key)
-    "isActief" boolean,
-    "assetId_identificator" text,
-    "assetId_toegekendDoor" text,
-    "typeURI" text,
+    asset_id_identificator text,
+    asset_id_toegekend_door text,
+    type_uri text,
     toestand text,
     notitie text,
     naam text,
     naampad text,
     naampad_parts jsonb,
     naampad_parent text,
-    "assetVersie_context" text,
-    "assetVersie_timestamp" timestamptz,
-    "assetVersie_versienummer" text,
-    "datumOprichtingObject" date,
+    asset_versie_context text,
+    asset_versie_timestamp timestamptz,
+    asset_versie_versienummer text,
+    datum_oprichting_object date,
     -- namespace buckets (jsonb) / special fields
     geo jsonb,
     wkt text,
@@ -103,7 +102,6 @@ CREATE TABLE IF NOT EXISTS public.assets
 );
 
 CREATE INDEX IF NOT EXISTS idx_assets_assettype ON public.assets (assettype);
-CREATE INDEX IF NOT EXISTS idx_assets_is_actief ON public.assets ("isActief");
 
 DO $$
 BEGIN
