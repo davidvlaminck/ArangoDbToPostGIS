@@ -65,14 +65,14 @@ def test_run_calls_fetch_and_upsert() -> None:
     ):
         result = syncer.run()
     mock_fetch.assert_called_once()
-    mock_upsert.assert_called_once_with([{"uuid": "x"}])
+    mock_insert.assert_called_once_with([{"uuid": "x"}])
     assert result == 1
 
 
-def test_upsert_no_rows() -> None:
+def test_insert_no_rows() -> None:
     syncer = _DummySyncer()
     with mock.patch("arangodbtopostgis.syncer.get_postgis_connection", side_effect=AssertionError):
-        assert syncer.upsert([]) == 0
+        assert syncer.insert([]) == 0
 
 
 def test_required_columns_skip_invalid_rows() -> None:

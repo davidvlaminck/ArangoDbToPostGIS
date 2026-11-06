@@ -28,6 +28,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
+from arangodbtopostgis.resume import mark_step_done, save_cursor_and_commit
 
 EXCLUDED_ATTRIBUTE_KEYS = {
     "_id",
@@ -74,6 +75,7 @@ def _asset_uuid_from_ref(ref: Any) -> str | None:
 class AssetrelatiesSyncer:
     ARANGO_COLLECTION = "assetrelaties"
     POSTGIS_TABLE = "public.assetrelaties"
+    RESUME_STEP = "assetrelaties"
     BATCH_SIZE = 2000
     FIELD_MAP = {
         "uuid": "uuid",
@@ -168,9 +170,11 @@ class AssetrelatiesSyncer:
             "attributes": self._remaining_attributes(doc),
         }
 
-    def _upsert_batch(self, conn: psycopg.Connection, rows: list[dict[str, Any]]) -> tuple[int, int]:
-        """Insert rows with per-row savepoints so one bad FK/missing ref doesn't abort the batch."""
-        if not rows:
+    def _insert_batch_and_checkpoint(
+        self, conn: psycopg.Connection, rows: list[dict[str, Any]], cursor: str | None
+    ) -> tuple[int, int]:
+        """Insert rows with savepoints; commit cursor in same transaction as successful rows."""
+        if not rows and cursor is None:
             return 0, 0
         columns = list(self.FIELD_MAP.values())
         col_list = ", ".join(_qident(c) for c in columns)
@@ -180,34 +184,46 @@ class AssetrelatiesSyncer:
             VALUES ({placeholders})
         """
         inserted = skipped = 0
-        with conn.cursor() as cur:
-            for row in rows:
-                params = [_sanitize(row.get(col)) for col in columns]
-                try:
-                    cur.execute("SAVEPOINT ar_row")
-                    cur.execute(sql, params)
-                    cur.execute("RELEASE SAVEPOINT ar_row")
-                    inserted += 1
-                except Exception as exc:
-                    cur.execute("ROLLBACK TO SAVEPOINT ar_row")
-                    skipped += 1
-                    if skipped <= 10:
-                        print(
-                            f"{self.__class__.__name__}: skipped {row.get('uuid')} "
-                            f"(bron={row.get('bron_asset_uuid')} doel={row.get('doel_asset_uuid')}): {exc}"
-                        )
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                for row in rows:
+                    params = [_sanitize(row.get(col)) for col in columns]
+                    try:
+                        cur.execute("SAVEPOINT ar_row")
+                        cur.execute(sql, params)
+                        cur.execute("RELEASE SAVEPOINT ar_row")
+                        inserted += 1
+                    except Exception as exc:
+                        cur.execute("ROLLBACK TO SAVEPOINT ar_row")
+                        skipped += 1
+                        if skipped <= 10:
+                            print(
+                                f"{self.__class__.__name__}: skipped {row.get('uuid')} "
+                                f"(bron={row.get('bron_asset_uuid')} doel={row.get('doel_asset_uuid')}): {exc}"
+                            )
+            save_cursor_and_commit(conn, self.RESUME_STEP, cursor)
+        except Exception:
+            conn.rollback()
+            raise
         return inserted, skipped
 
-    def run(self) -> int:
+    _upsert_batch = _insert_batch_and_checkpoint
+
+    def run_resumable(self, resume_cursor: str | None = None) -> int:
         self._load_relatietype_lookups()
         db = get_arango_db(self.arango_env)
-        query = (
-            "FOR d IN assetrelaties LIMIT @limit RETURN d"
-            if self.limit
-            else "FOR d IN assetrelaties RETURN d"
-        )
-        bind: dict[str, Any] = {"limit": self.limit} if self.limit else {}
+        after = None if resume_cursor in (None, "", "__DONE__") else resume_cursor
+        bind: dict[str, Any] = {"after": after or ""}
+        limit_clause = "LIMIT @limit" if self.limit else ""
+        if self.limit:
+            bind["limit"] = self.limit
+        query = f"""
+            FOR d IN assetrelaties
+            FILTER d._key > @after
+            SORT d._key ASC
+            {limit_clause}
+            RETURN d
+        """
         conn = get_postgis_connection(self.postgis_env)
         try:
             with conn.cursor() as cur:
@@ -217,7 +233,9 @@ class AssetrelatiesSyncer:
 
             fetched = inserted = skipped_invalid = skipped_db = batch_n = 0
             batch: list[dict[str, Any]] = []
+            last_key: str | None = after
             for doc in db.aql.execute(query, bind_vars=bind, batch_size=self.BATCH_SIZE):
+                last_key = doc.get("_key") or last_key
                 row = self._transform(doc)
                 if row is None or not all(row.get(c) is not None and row.get(c) != "" for c in self.REQUIRED_COLUMNS):
                     skipped_invalid += 1
@@ -231,7 +249,7 @@ class AssetrelatiesSyncer:
                 batch.append(row)
                 fetched += 1
                 if len(batch) >= self.BATCH_SIZE:
-                    ins, skip = self._upsert_batch(conn, batch)
+                    ins, skip = self._insert_batch_and_checkpoint(conn, batch, last_key)
                     inserted += ins
                     skipped_db += skip
                     batch = []
@@ -239,12 +257,13 @@ class AssetrelatiesSyncer:
                     if batch_n % 100 == 0:
                         print(
                             f"{self.__class__.__name__}: progress fetched={fetched} "
-                            f"inserted={inserted} skipped_db={skipped_db}"
+                            f"inserted={inserted} skipped_db={skipped_db} cursor={last_key}"
                         )
-            if batch:
-                ins, skip = self._upsert_batch(conn, batch)
+            if batch or last_key != after:
+                ins, skip = self._insert_batch_and_checkpoint(conn, batch, last_key)
                 inserted += ins
                 skipped_db += skip
+            mark_step_done(conn, self.RESUME_STEP)
         finally:
             conn.close()
         print(
@@ -255,6 +274,9 @@ class AssetrelatiesSyncer:
             + f"; inserted {inserted} into {self.POSTGIS_TABLE}"
         )
         return inserted
+
+    def run(self) -> int:
+        return self.run_resumable(None)
 
 
 def main() -> None:

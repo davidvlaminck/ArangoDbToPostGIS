@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
+from arangodbtopostgis.resume import RESUMABLE_STEPS, STEP_ORDER, prepare_step
 from arangodbtopostgis.setup_postgis_tables import ensure_tables
 from arangodbtopostgis.sync_agents import AgentsSyncer
 from arangodbtopostgis.sync_assetrelaties import AssetrelatiesSyncer
@@ -12,6 +13,7 @@ from arangodbtopostgis.sync_assets import AssetsSyncer
 from arangodbtopostgis.sync_assettypes import AssettypesSyncer
 from arangodbtopostgis.sync_beheerders import BeheerdersSyncer
 from arangodbtopostgis.sync_bestekken import BestekkenSyncer
+from arangodbtopostgis.sync_bestekkoppelingen import BestekkoppelingenSyncer
 from arangodbtopostgis.sync_identiteiten import IdentiteitenSyncer
 from arangodbtopostgis.sync_relatietypes import RelatietypesSyncer
 from arangodbtopostgis.sync_toezichtgroepen import ToezichtgroepenSyncer
@@ -97,7 +99,7 @@ def setup_postgis_tables() -> None:
 
 
 def fill_database() -> None:
-    """Run every configured syncer."""
+    """Run every configured syncer with params-based resume/checkpoints."""
     syncers = [
         AgentsSyncer(),
         AssettypesSyncer(),
@@ -107,10 +109,24 @@ def fill_database() -> None:
         RelatietypesSyncer(),
         ToezichtgroepenSyncer(),
         AssetsSyncer(limit=None),
+        BestekkoppelingenSyncer(),
         AssetrelatiesSyncer(),
     ]
     for syncer in syncers:
-        syncer.run()
+        step = getattr(syncer, "RESUME_STEP", syncer.ARANGO_COLLECTION)
+        if step not in STEP_ORDER:
+            raise ValueError(f"unknown resume step: {step!r}")
+        conn = get_postgis_connection("prd")
+        try:
+            cursor = prepare_step(conn, step)
+        finally:
+            conn.close()
+        if cursor == "__DONE__":
+            continue
+        if step in RESUMABLE_STEPS and hasattr(syncer, "run_resumable"):
+            syncer.run_resumable(resume_cursor=cursor)
+        else:
+            syncer.run()
 
 
 def main() -> None:

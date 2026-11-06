@@ -29,6 +29,8 @@ class BaseSyncer:
 
     ARANGO_COLLECTION: str = ""
     POSTGIS_TABLE: str = ""
+    # Resume/checkpoint step name; defaults to collection name.
+    RESUME_STEP: str = ""
     FIELD_MAP: dict[str, str] = {}
 
     # Optional list of required NOT NULL columns; rows missing these are skipped.
@@ -43,6 +45,8 @@ class BaseSyncer:
     def __init__(self, arango_env: str = "dev", postgis_env: str = "prd") -> None:
         self.arango_env = arango_env
         self.postgis_env = postgis_env
+        if not self.RESUME_STEP:
+            self.RESUME_STEP = self.ARANGO_COLLECTION
 
     # ------------------------------------------------------------------
     # Public API

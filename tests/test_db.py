@@ -49,49 +49,49 @@ def test_get_postgis_connection_uses_creds() -> None:
     assert result is fake_conn
 
 
-def test_execute_upsert_empty_rows() -> None:
+def test_execute_insert_empty_rows() -> None:
     conn = mock.MagicMock()
-    assert db.execute_upsert(conn, "public.t", {"a": "a"}, []) == 0
+    assert db.execute_insert(conn, "public.t", {"a": "a"}, []) == 0
     conn.commit.assert_not_called()
 
 
-def test_execute_upsert_builds_sql() -> None:
+def test_execute_insert_builds_sql() -> None:
     conn = mock.MagicMock()
     cursor = mock.Mock()
     conn.cursor.return_value.__enter__.return_value = cursor
 
     rows = [{"uuid": "1", "naam": "a"}, {"uuid": "2", "naam": "b"}]
-    count = db.execute_upsert(conn, "public.t", {"uuid": "uuid", "naam": "naam"}, rows)
+    count = db.execute_insert(conn, "public.t", {"uuid": "uuid", "naam": "naam"}, rows)
 
     assert count == 2
     # executemany called with the SQL and parameter list
     assert cursor.executemany.call_count == 1
     sql = cursor.executemany.call_args[0][0]
     params = cursor.executemany.call_args[0][1]
-    assert "INSERT INTO public.t" in sql
-    assert "ON CONFLICT (uuid) DO UPDATE" in sql
+    assert "INSERT INTO" in sql
+    assert "ON CONFLICT" not in sql
     assert params == [["1", "a"], ["2", "b"]]
     conn.commit.assert_called_once()
 
 
-def test_execute_upsert_sanitizes_empty_strings() -> None:
+def test_execute_insert_sanitizes_empty_strings() -> None:
     conn = mock.MagicMock()
     cursor = mock.Mock()
     conn.cursor.return_value.__enter__.return_value = cursor
 
     rows = [{"uuid": "", "naam": ""}]
-    db.execute_upsert(conn, "public.t", {"uuid": "uuid", "naam": "naam"}, rows)
+    db.execute_insert(conn, "public.t", {"uuid": "uuid", "naam": "naam"}, rows)
 
     params = cursor.executemany.call_args[0][1]
     assert params == [[None, None]]
 
 
-def test_execute_upsert_batching() -> None:
+def test_execute_insert_batching() -> None:
     conn = mock.MagicMock()
     cursor = mock.Mock()
     conn.cursor.return_value.__enter__.return_value = cursor
 
     rows = [{"uuid": str(i), "naam": f"n{i}"} for i in range(2500)]
-    db.execute_upsert(conn, "public.t", {"uuid": "uuid", "naam": "naam"}, rows, batch_size=1000)
+    db.execute_insert(conn, "public.t", {"uuid": "uuid", "naam": "naam"}, rows, batch_size=1000)
 
     assert cursor.executemany.call_count == 3  # 1000 + 1000 + 500
