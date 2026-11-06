@@ -7,7 +7,7 @@ Subclasses define:
 * ``FIELD_MAP`` – mapping of Arango field name -> PostGIS column name.
 * ``_transform(doc)`` – optional per-document transformation hook.
 
-The base class handles connection management, batched upserts, and logging.
+The base class handles connection management, batched inserts, and logging.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from arango.collection import Collection
 from psycopg import Connection
 
 from arangodbtopostgis.db import (
-    execute_upsert,
+    execute_insert,
     get_arango_db,
     get_postgis_connection,
 )
@@ -37,7 +37,7 @@ class BaseSyncer:
     # Default value applied when a mapped field is missing and the column is NOT NULL.
     DEFAULTS: dict[str, Any] = {"actief": True}
 
-    # Rows are upserted in batches of this size.
+    # Rows are inserted in batches of this size.
     BATCH_SIZE: int = 1000
 
     def __init__(self, arango_env: str = "dev", postgis_env: str = "prd") -> None:
@@ -49,12 +49,12 @@ class BaseSyncer:
     # ------------------------------------------------------------------
 
     def run(self) -> int:
-        """Fetch from Arango and upsert into PostGIS; return row count."""
+        """Fetch from Arango and insert into PostGIS; return row count."""
         rows = self.fetch()
-        count = self.upsert(rows)
+        count = self.insert(rows)
         print(
-            f"{self.__class__.__name__}: fetched {len(rows)} rows, "
-            f"upserted {count} into {self.POSTGIS_TABLE}"
+            f"{self.__class__.__name__}: fetched {len(rows)} from '{self.ARANGO_COLLECTION}', "
+            f"inserted {count} into {self.POSTGIS_TABLE}"
         )
         return count
 
@@ -73,10 +73,6 @@ class BaseSyncer:
                 continue
             if self._is_valid(row):
                 rows.append(row)
-        print(
-            f"{self.__class__.__name__}: fetched {len(rows)} rows "
-            f"from Arango collection '{self.ARANGO_COLLECTION}'"
-        )
         return rows
 
     def _transform(self, doc: dict[str, Any]) -> dict[str, Any] | None:
@@ -102,18 +98,17 @@ class BaseSyncer:
         return all(row.get(col) is not None and row.get(col) != "" for col in self.REQUIRED_COLUMNS)
 
     # ------------------------------------------------------------------
-    # Upsert
+    # Insert
     # ------------------------------------------------------------------
 
-    def upsert(self, rows: list[dict[str, Any]]) -> int:
-        """Bulk upsert ``rows`` into the PostGIS table."""
+    def insert(self, rows: list[dict[str, Any]]) -> int:
+        """Bulk insert ``rows`` into the PostGIS table."""
         if not rows:
-            print(f"{self.__class__.__name__}: no rows to upsert")
             return 0
 
         conn = get_postgis_connection(self.postgis_env)
         try:
-            count = execute_upsert(
+            count = execute_insert(
                 conn,
                 self.POSTGIS_TABLE,
                 self.FIELD_MAP,
@@ -122,11 +117,10 @@ class BaseSyncer:
             )
         finally:
             conn.close()
-        print(
-            f"{self.__class__.__name__}: upserted {count} rows "
-            f"into PostGIS table '{self.POSTGIS_TABLE}'"
-        )
         return count
+
+    # Backwards-compatible name.
+    upsert = insert
 
     # ------------------------------------------------------------------
     # Convenience accessors (useful for subclasses / tests)

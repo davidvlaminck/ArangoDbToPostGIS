@@ -157,8 +157,8 @@ CREATE INDEX IF NOT EXISTS idx_geometrie_geom ON public.geometrie USING GIST (ge
 CREATE TABLE IF NOT EXISTS public.bestekken
 (
     uuid uuid NOT NULL,
-    e_delta_dossiernummer text COLLATE pg_catalog."default" NOT NULL,
-    e_delta_besteknummer text COLLATE pg_catalog."default" NOT NULL,
+    e_delta_dossiernummer text COLLATE pg_catalog."default",
+    e_delta_besteknummer text COLLATE pg_catalog."default",
     awv_id text COLLATE pg_catalog."default",
     aannemer_naam text COLLATE pg_catalog."default",
     aannemer_referentie text COLLATE pg_catalog."default",

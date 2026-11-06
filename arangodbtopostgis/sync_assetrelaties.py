@@ -215,7 +215,7 @@ class AssetrelatiesSyncer:
                 if cur.fetchone()[0] is None:
                     raise RuntimeError("public.assetrelaties table missing; run setup_postgis_tables first")
 
-            fetched = upserted = skipped_invalid = skipped_db = batch_n = 0
+            fetched = inserted = skipped_invalid = skipped_db = batch_n = 0
             batch: list[dict[str, Any]] = []
             for doc in db.aql.execute(query, bind_vars=bind, batch_size=self.BATCH_SIZE):
                 row = self._transform(doc)
@@ -232,18 +232,18 @@ class AssetrelatiesSyncer:
                 fetched += 1
                 if len(batch) >= self.BATCH_SIZE:
                     ins, skip = self._upsert_batch(conn, batch)
-                    upserted += ins
+                    inserted += ins
                     skipped_db += skip
                     batch = []
                     batch_n += 1
                     if batch_n % 100 == 0:
                         print(
                             f"{self.__class__.__name__}: progress fetched={fetched} "
-                            f"upserted={upserted} skipped_db={skipped_db}"
+                            f"inserted={inserted} skipped_db={skipped_db}"
                         )
             if batch:
                 ins, skip = self._upsert_batch(conn, batch)
-                upserted += ins
+                inserted += ins
                 skipped_db += skip
         finally:
             conn.close()
@@ -252,9 +252,9 @@ class AssetrelatiesSyncer:
             + (f" (limit={self.limit})" if self.limit else "")
             + (f", {skipped_invalid} skipped (invalid/missing relatietype)" if skipped_invalid else "")
             + (f", {skipped_db} skipped (db/FK)" if skipped_db else "")
+            + f"; inserted {inserted} into {self.POSTGIS_TABLE}"
         )
-        print(f"{self.__class__.__name__}: upserted {upserted} into {self.POSTGIS_TABLE}")
-        return upserted
+        return inserted
 
 
 def main() -> None:

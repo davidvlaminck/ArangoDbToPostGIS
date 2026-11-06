@@ -337,7 +337,7 @@ class AssetsSyncer(BaseSyncer):
             if not has_geometrie:
                 print(f"{self.__class__.__name__}: public.geometrie missing; geometry sync skipped")
 
-            fetched = upserted = geom_upserted = unknown_types = batch_n = 0
+            fetched = inserted = geom_inserted = unknown_types = batch_n = 0
             batch: list[dict[str, Any]] = []
             geom_batch: list[dict[str, Any]] = []
             for doc in db.aql.execute(query, bind_vars=bind, batch_size=self.BATCH_SIZE):
@@ -353,47 +353,44 @@ class AssetsSyncer(BaseSyncer):
                     geom_batch.append({"asset_uuid": row["uuid"], "wkt": row["wkt"]})
                 fetched += 1
                 if len(batch) >= self.BATCH_SIZE:
-                    from arangodbtopostgis.db import execute_upsert
+                    from arangodbtopostgis.db import execute_insert
 
-                    upserted += execute_upsert(
+                    inserted += execute_insert(
                         conn, self.POSTGIS_TABLE, field_map, batch, batch_size=self.BATCH_SIZE
                     )
                     if has_geometrie:
-                        geom_upserted += self._upsert_geometrie(conn, geom_batch)
+                        geom_inserted += self._upsert_geometrie(conn, geom_batch)
                         geom_batch = []
                     batch_n += 1
                     if batch_n % 50 == 0:
                         print(
                             f"{self.__class__.__name__}: progress fetched={fetched} "
-                            f"upserted={upserted} geometrie={geom_upserted}"
+                            f"inserted={inserted} geometrie={geom_inserted}"
                         )
                     batch = []
             if batch:
-                from arangodbtopostgis.db import execute_upsert
+                from arangodbtopostgis.db import execute_insert
 
-                upserted += execute_upsert(
+                inserted += execute_insert(
                     conn, self.POSTGIS_TABLE, field_map, batch, batch_size=self.BATCH_SIZE
                 )
                 if has_geometrie:
-                    geom_upserted += self._upsert_geometrie(conn, geom_batch)
+                    geom_inserted += self._upsert_geometrie(conn, geom_batch)
 
             bk_stats = self._sync_bestekkoppelingen(conn, db)
         finally:
             conn.close()
         print(
-            f"{self.__class__.__name__}: fetched {fetched} rows "
-            f"from Arango collection '{self.ARANGO_COLLECTION}'"
+            f"{self.__class__.__name__}: fetched {fetched} from '{self.ARANGO_COLLECTION}'"
             + (f" (limit={self.limit})" if self.limit else "")
             + (f", {unknown_types} with unresolved assettype" if unknown_types else "")
-        )
-        print(
-            f"{self.__class__.__name__}: upserted {upserted} into {self.POSTGIS_TABLE}, "
-            f"{geom_upserted} into public.geometrie, "
-            f"{bk_stats['inserted']} into {self.BESTEKKOPPELINGEN_TABLE}"
+            + f"; inserted {inserted} into {self.POSTGIS_TABLE}, "
+            + f"{geom_inserted} into public.geometrie, "
+            + f"{bk_stats['inserted']} into {self.BESTEKKOPPELINGEN_TABLE}"
             + (f", {bk_stats['skipped_no_volgnummer']} skipped (no volgnummer)" if bk_stats["skipped_no_volgnummer"] else "")
             + (f", {bk_stats['skipped_invalid']} skipped (invalid)" if bk_stats["skipped_invalid"] else "")
         )
-        return upserted
+        return inserted
 
     @staticmethod
     def _jsonb(value: Any) -> Jsonb | None:

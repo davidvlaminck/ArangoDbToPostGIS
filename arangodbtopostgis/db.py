@@ -39,7 +39,7 @@ def get_postgis_connection(env: str = "prd") -> psycopg.Connection:
     )
 
 
-def execute_upsert(
+def execute_insert(
     conn: psycopg.Connection,
     table: str,
     field_map: dict[str, str],
@@ -50,8 +50,8 @@ def execute_upsert(
 ) -> int:
     """Bulk insert rows into ``table`` using ``field_map`` (arango_field -> pg_column).
 
-    This is a plain INSERT (no conflict handling) for full reloads into an empty DB.
-    ``pk`` is accepted for API compatibility. Returns the number of rows inserted.
+    Plain INSERT for full reloads into an empty DB. ``pk`` is accepted for API
+    compatibility. Returns the number of rows inserted.
     """
     if not rows:
         return 0
@@ -80,6 +80,10 @@ def execute_upsert(
             total += len(batch)
     conn.commit()
     return total
+
+
+# Backwards-compatible name; syncers use insert-only behavior for empty-DB reloads.
+execute_upsert = execute_insert
 
 
 def _sanitize(value: Any) -> Any:

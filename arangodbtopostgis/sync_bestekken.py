@@ -17,8 +17,8 @@ class BestekkenSyncer(BaseSyncer):
         "aannemerReferentie": "aannemer_referentie",
         "actief": "actief",
     }
-    # Skip docs missing required NOT NULL fields.
-    REQUIRED_COLUMNS = ("uuid", "e_delta_dossiernummer", "e_delta_besteknummer")
+    # eDelta dossier/bestek numbers can be missing in source data; keep row if uuid present.
+    REQUIRED_COLUMNS = ("uuid",)
 
 
 def main() -> None:
