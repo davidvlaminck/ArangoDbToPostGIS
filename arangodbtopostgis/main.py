@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from typing import Any
 
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
 from arangodbtopostgis.resume import RESUMABLE_STEPS, STEP_ORDER, get_param, prepare_step
@@ -112,7 +113,7 @@ def setup_postgis_tables() -> None:
 
 def fill_database() -> None:
     """Run every configured syncer with params-based resume/checkpoints."""
-    syncers = [
+    syncers: list[Any] = [
         AgentsSyncer(),
         AssettypesSyncer(),
         BeheerdersSyncer(),
