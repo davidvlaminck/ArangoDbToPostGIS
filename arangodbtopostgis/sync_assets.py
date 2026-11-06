@@ -1,6 +1,8 @@
 """Sync ``assets`` from ArangoDB to PostGIS.
 
-Column mapping follows ``attributes.md``. Geometry and ``bs`` are skipped.
+Column mapping follows ``attributes.md``. Geometry is derived from ``wkt``.
+Bestekkoppelingen are synced from the Arango ``bestekkoppelingen`` edge collection
+(using edge ``volgnummer`` for ordering). ``bs`` is excluded from ``assets.attributes``.
 By default this script syncs a limited test batch (10,000 rows); pass
 ``--limit 0`` or set ``ASSETS_LIMIT=0`` for a full sync.
 """
@@ -22,7 +24,7 @@ from arangodbtopostgis.syncer import BaseSyncer
 NS_COLUMNS = ("geo", "wkt", "loc", "grp", "wl", "bz", "tz", "lgc", "ins", "ond", "vtc")
 
 # Source keys consumed by scalar/NS columns or intentionally excluded from `attributes`.
-# geometry/bs are skipped for now (planned separate handling) — not stored in `attributes`.
+# geometry has dedicated handling; bs/bestekkoppelingen have dedicated handling.
 EXCLUDED_ATTRIBUTE_KEYS = {
     "@id",
     "@type",
@@ -46,8 +48,8 @@ EXCLUDED_ATTRIBUTE_KEYS = {
     "AIMVersie_assetVersie",
     "datumOprichtingObject",
     "AIMObject_datumOprichtingObject",
-    "geometry",  # derived GeoJSON, separate handling later
-    "bs",        # namespace bucket, separate handling later
+    "geometry",  # derived GeoJSON, separate handling
+    "bs",        # synced via bestekkoppelingen edge collection
     *NS_COLUMNS,
 }
 
@@ -55,6 +57,7 @@ EXCLUDED_ATTRIBUTE_KEYS = {
 class AssetsSyncer(BaseSyncer):
     ARANGO_COLLECTION = "assets"
     POSTGIS_TABLE = "public.assets"
+    BESTEKKOPPELINGEN_TABLE = "public.bestekkoppelingen"
     # FIELD_MAP keys are output row keys; values are PostGIS columns.
     FIELD_MAP = {
         "uuid": "uuid",
@@ -137,6 +140,185 @@ class AssetsSyncer(BaseSyncer):
         conn.commit()
         return inserted
 
+    @staticmethod
+    def _parse_bestek_uuid(item: dict[str, Any]) -> str | None:
+        """Extract full bestek UUID for ``public.bestekken.uuid``.
+
+        Primary: ``DtcBestekkoppeling_bestekId.DtcIdentificator_identificator``.
+        It is often stored as ``<full-uuid>-<suffix>``; we take the first 36 chars.
+        ``_to`` is a short bestek key in this Arango model and is NOT used as the UUID.
+        """
+        ident = (item.get("DtcBestekkoppeling_bestekId") or {}).get("DtcIdentificator_identificator")
+        if isinstance(ident, str) and ident:
+            candidate = ident[:36] if len(ident) >= 36 else ident
+            return candidate or None
+        return None
+
+    @staticmethod
+    def _asset_uuid_from_edge(edge: dict[str, Any]) -> str | None:
+        from_ref = edge.get("_from")
+        if not isinstance(from_ref, str) or "/" not in from_ref:
+            return None
+        return from_ref.split("/", 1)[1] or None
+
+    @staticmethod
+    def _parse_dt(value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return None
+
+    @staticmethod
+    def _status_tail(value: Any) -> str | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+        return value.rsplit("/", 1)[-1] if "/" in value else value.strip()
+
+    def _bestekkoppeling_row_from_edge(self, edge: dict[str, Any]) -> dict[str, Any] | None:
+        asset_uuid = self._asset_uuid_from_edge(edge)
+        bestek_uuid = self._parse_bestek_uuid(edge)
+        volgnummer_raw = edge.get("volgnummer")
+        if volgnummer_raw is None:
+            volgnummer_raw = edge.get("volgorde")  # transitional fallback
+        if not asset_uuid or not bestek_uuid or volgnummer_raw is None:
+            return None
+        try:
+            # Arango attribute -> PostGIS `volgnummer` (order key). May be 0-based.
+            volgnummer = int(volgnummer_raw)
+        except (TypeError, ValueError):
+            return None
+        if volgnummer < -32768 or volgnummer > 32767:
+            return None
+        return {
+            "asset_uuid": asset_uuid,
+            "bestek_uuid": bestek_uuid,
+            "volgnummer": volgnummer,
+            "start_datum": self._parse_dt(edge.get("DtcBestekkoppeling_actiefVan")),
+            "eind_datum": self._parse_dt(edge.get("DtcBestekkoppeling_actiefTot")),
+            "koppeling_status": self._status_tail(edge.get("DtcBestekkoppeling_status")),
+        }
+
+    def _replace_bestekkoppelingen(self, conn: psycopg.Connection, rows: list[dict[str, Any]]) -> int:
+        """Replace bestekkoppelingen for affected assets.
+
+        Delete+insert is used because an ordered list can shrink and stale
+        ``volgnummer`` rows must not survive. Duplicate (asset, volgnummer)
+        rows within the same replacement keep the last row and log a warning.
+        """
+        if not rows:
+            return 0
+        by_asset: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            by_asset.setdefault(row["asset_uuid"], []).append(row)
+        inserted = 0
+        with conn.cursor() as cur:
+            for asset_uuid, asset_rows in by_asset.items():
+                try:
+                    cur.execute("SAVEPOINT bk_asset")
+                    dedup: dict[int, dict[str, Any]] = {}
+                    for row in sorted(asset_rows, key=lambda r: r["volgnummer"]):
+                        vn = row["volgnummer"]
+                        if vn in dedup:
+                            print(
+                                f"{self.__class__.__name__}: duplicate volgnummer {vn} "
+                                f"for asset {asset_uuid}; keeping last"
+                            )
+                        dedup[vn] = row
+                    cur.execute(
+                        f"DELETE FROM {self.BESTEKKOPPELINGEN_TABLE} WHERE asset_uuid = %s::uuid",
+                        (asset_uuid,),
+                    )
+                    for row in dedup.values():
+                        cur.execute(
+                            f"""
+                            INSERT INTO {self.BESTEKKOPPELINGEN_TABLE}
+                                (asset_uuid, bestek_uuid, volgnummer, start_datum, eind_datum, koppeling_status)
+                            VALUES (%s::uuid, %s::uuid, %s::smallint, %s::timestamptz, %s::timestamptz, %s)
+                            """,
+                            (
+                                row["asset_uuid"],
+                                row["bestek_uuid"],
+                                row["volgnummer"],
+                                row["start_datum"],
+                                row["eind_datum"],
+                                row["koppeling_status"],
+                            ),
+                        )
+                        inserted += 1
+                    cur.execute("RELEASE SAVEPOINT bk_asset")
+                except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT bk_asset")
+                    print(
+                        f"{self.__class__.__name__}: skipped bestekkoppelingen for {asset_uuid}: {exc}"
+                    )
+        conn.commit()
+        return inserted
+
+    def _sync_bestekkoppelingen(self, conn: psycopg.Connection, db) -> dict[str, int]:
+        """Sync bestekkoppelingen from the Arango ``bestekkoppelingen`` edge collection.
+
+        Uses edge ``volgnummer`` as the order value stored in PostGIS ``volgnummer``.
+        Edges missing ``volgnummer`` are skipped (counted) because order cannot be
+        represented reliably without it.
+        """
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('public.bestekkoppelingen')")
+            if cur.fetchone()[0] is None:
+                print(f"{self.__class__.__name__}: public.bestekkoppelingen missing; bk sync skipped")
+                return {"inserted": 0, "skipped_no_volgnummer": 0, "skipped_invalid": 0}
+
+        query = """
+            FOR e IN bestekkoppelingen
+            LET vn = e.volgnummer != null ? e.volgnummer : e.volgorde
+            FILTER vn != null
+            SORT e._from ASC, vn ASC
+            RETURN {
+                _from: e._from,
+                volgnummer: vn,
+                DtcBestekkoppeling_bestekId: e.DtcBestekkoppeling_bestekId,
+                DtcBestekkoppeling_actiefVan: e.DtcBestekkoppeling_actiefVan,
+                DtcBestekkoppeling_actiefTot: e.DtcBestekkoppeling_actiefTot,
+                DtcBestekkoppeling_status: e.DtcBestekkoppeling_status
+            }
+        """
+        missing_query = "RETURN LENGTH(FOR e IN bestekkoppelingen FILTER e.volgnummer == null AND e.volgorde == null RETURN 1)"
+        skipped_no_volgnummer = int(list(db.aql.execute(missing_query))[0])
+
+        inserted = skipped_invalid = 0
+        by_asset: dict[str, list[dict[str, Any]]] = {}
+        batch_n = 0
+        for edge in db.aql.execute(query, batch_size=self.BATCH_SIZE):
+            row = self._bestekkoppeling_row_from_edge(edge)
+            if row is None:
+                skipped_invalid += 1
+                continue
+            asset_uuid = row["asset_uuid"]
+            by_asset.setdefault(asset_uuid, []).append(row)
+            if len(by_asset) >= self.BATCH_SIZE:
+                inserted += self._replace_bestekkoppelingen(
+                    conn, [r for rows in by_asset.values() for r in rows]
+                )
+                by_asset = {}
+                batch_n += 1
+                if batch_n % 50 == 0:
+                    print(
+                        f"{self.__class__.__name__}: bestekkoppelingen progress "
+                        f"inserted={inserted} skipped_no_volgnummer={skipped_no_volgnummer}"
+                    )
+        if by_asset:
+            inserted += self._replace_bestekkoppelingen(
+                conn, [r for rows in by_asset.values() for r in rows]
+            )
+        return {
+            "inserted": inserted,
+            "skipped_no_volgnummer": skipped_no_volgnummer,
+            "skipped_invalid": skipped_invalid,
+        }
+
     def run(self) -> int:
         self._load_assettype_lookup()
         db = get_arango_db(self.arango_env)
@@ -198,6 +380,8 @@ class AssetsSyncer(BaseSyncer):
                 )
                 if has_geometrie:
                     geom_upserted += self._upsert_geometrie(conn, geom_batch)
+
+            bk_stats = self._sync_bestekkoppelingen(conn, db)
         finally:
             conn.close()
         print(
@@ -208,7 +392,10 @@ class AssetsSyncer(BaseSyncer):
         )
         print(
             f"{self.__class__.__name__}: upserted {upserted} into {self.POSTGIS_TABLE}, "
-            f"{geom_upserted} into public.geometrie"
+            f"{geom_upserted} into public.geometrie, "
+            f"{bk_stats['inserted']} into {self.BESTEKKOPPELINGEN_TABLE}"
+            + (f", {bk_stats['skipped_no_volgnummer']} skipped (no volgnummer)" if bk_stats["skipped_no_volgnummer"] else "")
+            + (f", {bk_stats['skipped_invalid']} skipped (invalid)" if bk_stats["skipped_invalid"] else "")
         )
         return upserted
 

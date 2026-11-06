@@ -167,6 +167,45 @@ CREATE TABLE IF NOT EXISTS public.bestekken
 );
 
 
+-- Table: public.bestekkoppelingen
+-- n-n relation between assets and bestekken, derived from Arango edge collection
+-- `bestekkoppelingen` (edge attribute `volgnummer`, transitional fallback: `volgorde`).
+-- `volgnummer` preserves Arango edge order as provided (may be 0-based).
+
+CREATE TABLE IF NOT EXISTS public.bestekkoppelingen
+(
+    asset_uuid uuid NOT NULL,
+    bestek_uuid uuid NOT NULL,
+    volgnummer smallint NOT NULL,
+    start_datum timestamptz,
+    eind_datum timestamptz,
+    koppeling_status text,
+    CONSTRAINT bestekkoppelingen_pkey PRIMARY KEY (asset_uuid, volgnummer),
+    CONSTRAINT bestekkoppelingen_assets_fkey FOREIGN KEY (asset_uuid)
+        REFERENCES public.assets (uuid) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_bestekkoppelingen_bestek_uuid
+    ON public.bestekkoppelingen (bestek_uuid);
+CREATE INDEX IF NOT EXISTS idx_bestekkoppelingen_asset_uuid
+    ON public.bestekkoppelingen (asset_uuid);
+
+DO $$
+BEGIN
+    ALTER TABLE IF EXISTS public.bestekkoppelingen
+        ADD CONSTRAINT bestekkoppelingen_bestekken_fkey
+        FOREIGN KEY (bestek_uuid)
+        REFERENCES public.bestekken (uuid) MATCH SIMPLE
+        ON UPDATE NO ACTION
+        ON DELETE NO ACTION
+        NOT VALID;
+EXCEPTION WHEN duplicate_object OR undefined_table THEN
+    NULL;
+END $$;
+
+
 -- Table: public.beheerders
 
 CREATE TABLE IF NOT EXISTS public.beheerders
