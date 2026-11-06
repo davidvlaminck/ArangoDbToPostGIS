@@ -65,7 +65,7 @@ class AssetsSyncer(BaseSyncer):
     def fetch(self) -> list[dict[str, Any]]:
         return []
 
-    def _pg_columns(self, conn: Any, table: str = "assets") -> set[str]:
+    def _pg_columns(self, conn, table: str = "assets") -> set[str]:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=%s",
@@ -115,8 +115,7 @@ class AssetsSyncer(BaseSyncer):
                 logger.info(f"{self.__class__.__name__}: skipping unmapped/missing columns: {extra}")
             with conn.cursor() as cur:
                 cur.execute("SELECT to_regclass('public.geometrie')")
-                table_row = cur.fetchone()
-                has_geometrie = table_row is not None and table_row[0] is not None
+                has_geometrie = cur.fetchone()[0] is not None
             if not has_geometrie:
                 logger.info(f"{self.__class__.__name__}: public.geometrie missing; geometry sync skipped")
 
