@@ -48,9 +48,10 @@ def execute_upsert(
     pk: str = "uuid",
     batch_size: int = 1000,
 ) -> int:
-    """Bulk upsert rows into ``table`` using ``field_map`` (arango_field -> pg_column).
+    """Bulk insert rows into ``table`` using ``field_map`` (arango_field -> pg_column).
 
-    Returns the number of rows upserted.
+    This is a plain INSERT (no conflict handling) for full reloads into an empty DB.
+    ``pk`` is accepted for API compatibility. Returns the number of rows inserted.
     """
     if not rows:
         return 0
@@ -64,13 +65,10 @@ def execute_upsert(
     columns = list(field_map.values())
     col_list = ", ".join(qident(col) for col in columns)
     placeholders = ", ".join(["%s"] * len(columns))
-    update_set = ", ".join(f"{qident(col)} = EXCLUDED.{qident(col)}" for col in columns if col != pk)
 
     sql = f"""
         INSERT INTO {qtable(table)} ({col_list})
         VALUES ({placeholders})
-        ON CONFLICT ({qident(pk)}) DO UPDATE
-        SET {update_set}
     """
 
     total = 0

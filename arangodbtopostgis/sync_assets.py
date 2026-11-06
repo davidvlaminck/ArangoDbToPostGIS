@@ -115,14 +115,12 @@ class AssetsSyncer(BaseSyncer):
             return {r[0] for r in cur.fetchall()}
 
     def _upsert_geometrie(self, conn: psycopg.Connection, rows: list[dict[str, Any]]) -> int:
-        """Upsert geometry rows parsed from top-level `wkt` (SRID=3812). WKT leads; no fallback."""
+        """Insert geometry rows parsed from top-level `wkt` (SRID=3812). WKT leads; no fallback."""
         if not rows:
             return 0
         sql = """
             INSERT INTO public.geometrie (asset_uuid, wkt, geom)
             VALUES (%s::uuid, %s, ST_Force3DZ(ST_SetSRID(ST_GeomFromEWKT(%s), 3812)))
-            ON CONFLICT (asset_uuid) DO UPDATE
-            SET wkt = EXCLUDED.wkt, geom = EXCLUDED.geom
         """
         inserted = 0
         with conn.cursor() as cur:

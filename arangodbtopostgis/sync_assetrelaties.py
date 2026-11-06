@@ -169,18 +169,15 @@ class AssetrelatiesSyncer:
         }
 
     def _upsert_batch(self, conn: psycopg.Connection, rows: list[dict[str, Any]]) -> tuple[int, int]:
-        """Upsert rows with per-row savepoints so one bad FK/missing ref doesn't abort the batch."""
+        """Insert rows with per-row savepoints so one bad FK/missing ref doesn't abort the batch."""
         if not rows:
             return 0, 0
         columns = list(self.FIELD_MAP.values())
         col_list = ", ".join(_qident(c) for c in columns)
         placeholders = ", ".join(["%s"] * len(columns))
-        update_set = ", ".join(f"{_qident(c)} = EXCLUDED.{_qident(c)}" for c in columns if c != "uuid")
         sql = f"""
             INSERT INTO {_qtable(self.POSTGIS_TABLE)} ({col_list})
             VALUES ({placeholders})
-            ON CONFLICT ({_qident('uuid')}) DO UPDATE
-            SET {update_set}
         """
         inserted = skipped = 0
         with conn.cursor() as cur:
