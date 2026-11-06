@@ -488,3 +488,11 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS public.voedt_relaties AS
 SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%voedt%';
 CREATE MATERIALIZED VIEW IF NOT EXISTS public.ligtop_relaties AS
 SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%ligtop%';
+
+-- Additional indexes for FK / filtered columns
+CREATE INDEX IF NOT EXISTS idx_assets_assettype ON public.assets (assettype);
+CREATE INDEX IF NOT EXISTS idx_assets_actief ON public.assets (actief);
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_relatietype ON public.assetrelaties (relatietype_uuid);
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_bron_type ON public.assetrelaties (bron_type);
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_doel_type ON public.assetrelaties (doel_type);
+CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_actief ON public.betrokkenerelaties (actief);
