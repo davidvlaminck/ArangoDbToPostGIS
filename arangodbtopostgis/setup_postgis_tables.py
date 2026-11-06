@@ -1,4 +1,9 @@
-"""Ensure PostGIS tables exist before syncing data."""
+"""Ensure PostGIS tables exist before syncing data.
+
+``params`` acts as the schema sentinel: if it is missing, all managed tables
+are dropped and recreated from the SQL definition so schema changes are applied
+cleanly.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +13,8 @@ import psycopg
 
 SQL_FILE: Path = Path(__file__).resolve().parents[1] / "sql" / "postgis_tables.sql"
 
-# Tables this module is responsible for creating.
+# Tables this module is responsible for creating. Order matters for drops only
+# as documentation; drops use CASCADE. ``params`` is the sentinel table.
 MANAGED_TABLES: tuple[str, ...] = (
     "params",
     "agents",
@@ -39,13 +45,49 @@ def table_exists(conn: psycopg.Connection, table_name: str) -> bool:
     return bool(row[0]) if row else False
 
 
+def _qident(name: str) -> str:
+    return '"' + name.replace('"', '""') + '"'
+
+
+def drop_managed_tables(conn: psycopg.Connection) -> None:
+    """Drop all managed tables so the schema can be recreated cleanly."""
+    # Drop in reverse dependency-aware order; CASCADE handles any remaining refs.
+    for table in reversed(MANAGED_TABLES):
+        with conn.cursor() as cur:
+            cur.execute(f"DROP TABLE IF EXISTS public.{_qident(table)} CASCADE")
+    conn.commit()
+    print(f"Dropped managed tables: {', '.join(MANAGED_TABLES)}")
+
+
+def create_tables(conn: psycopg.Connection) -> None:
+    sql = SQL_FILE.read_text()
+    with conn.cursor() as cur:
+        cur.execute(sql)
+    conn.commit()
+    print(f"Created managed tables from {SQL_FILE.name}: {', '.join(MANAGED_TABLES)}")
+
+
 def ensure_tables(conn: psycopg.Connection) -> None:
-    """Create any managed tables that are missing."""
+    """Create managed tables, resetting all of them when the sentinel is missing."""
+    if not table_exists(conn, "params"):
+        existing = [t for t in MANAGED_TABLES if t != "params" and table_exists(conn, t)]
+        if existing:
+            print(
+                "Sentinel table 'params' is missing; dropping and recreating all managed tables "
+                f"(existing: {', '.join(existing)})."
+            )
+        else:
+            print("Sentinel table 'params' is missing; creating managed tables.")
+        drop_managed_tables(conn)
+        create_tables(conn)
+        return
+
     missing = [t for t in MANAGED_TABLES if not table_exists(conn, t)]
     if not missing:
         print("All managed tables already exist — nothing to create.")
         return
 
+    # params exists but others are missing: create via idempotent SQL without dropping.
     sql = SQL_FILE.read_text()
     with conn.cursor() as cur:
         cur.execute(sql)

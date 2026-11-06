@@ -11,8 +11,8 @@ class ToezichtgroepenSyncer(BaseSyncer):
     FIELD_MAP = {
         "uuid": "uuid",
         "naam": "naam",
-        "type": "typeGroep",
-        "omschrijving": "referentie",
+        "type": "type_groep",
+        "omschrijving": "omschrijving",
         "actief": "actief",
     }
     # actiefInterval, contactFiche -> extra Arango data -> ignored

@@ -10,12 +10,12 @@ class IdentiteitenSyncer(BaseSyncer):
     POSTGIS_TABLE = "public.identiteiten"
     FIELD_MAP = {
         "uuid": "uuid",
-        "type": "typeIdentiteit",
+        "type": "type_identiteit",
         "naam": "naam",
         "voornaam": "voornaam",
         "gebruikersnaam": "gebruikersnaam",
         "systeem": "systeem",
-        "voId": "voId",
+        "voId": "vo_id",
         "bron": "bron",
         "actief": "actief",
     }

@@ -10,15 +10,15 @@ class BestekkenSyncer(BaseSyncer):
     POSTGIS_TABLE = "public.bestekken"
     FIELD_MAP = {
         "uuid": "uuid",
-        "eDeltaDossiernummer": "eDeltaDossiernummer",
-        "eDeltaBesteknummer": "eDeltaBesteknummer",
-        "aannemerNaam": "aannemerNaam",
-        "awvId": "awvId",
-        "aannemerReferentie": "aannemerReferentie",
+        "eDeltaDossiernummer": "e_delta_dossiernummer",
+        "eDeltaBesteknummer": "e_delta_besteknummer",
+        "aannemerNaam": "aannemer_naam",
+        "awvId": "awv_id",
+        "aannemerReferentie": "aannemer_referentie",
         "actief": "actief",
     }
     # Skip docs missing required NOT NULL fields.
-    REQUIRED_COLUMNS = ("uuid", "eDeltaDossiernummer", "eDeltaBesteknummer")
+    REQUIRED_COLUMNS = ("uuid", "e_delta_dossiernummer", "e_delta_besteknummer")
 
 
 def main() -> None:

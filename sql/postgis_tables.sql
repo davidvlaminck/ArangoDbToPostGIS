@@ -157,11 +157,11 @@ CREATE INDEX IF NOT EXISTS idx_geometrie_geom ON public.geometrie USING GIST (ge
 CREATE TABLE IF NOT EXISTS public.bestekken
 (
     uuid uuid NOT NULL,
-    eDeltaDossiernummer text COLLATE pg_catalog."default" NOT NULL,
-    eDeltaBesteknummer text COLLATE pg_catalog."default" NOT NULL,
-    awvId text COLLATE pg_catalog."default",
-    aannemerNaam text COLLATE pg_catalog."default",
-    aannemerReferentie text COLLATE pg_catalog."default",
+    e_delta_dossiernummer text COLLATE pg_catalog."default" NOT NULL,
+    e_delta_besteknummer text COLLATE pg_catalog."default" NOT NULL,
+    awv_id text COLLATE pg_catalog."default",
+    aannemer_naam text COLLATE pg_catalog."default",
+    aannemer_referentie text COLLATE pg_catalog."default",
     actief boolean NOT NULL,
     CONSTRAINT bestekken_pkey PRIMARY KEY (uuid)
 );
@@ -243,7 +243,7 @@ CREATE TABLE IF NOT EXISTS public.toezichtgroepen
 (
     uuid uuid NOT NULL,
     naam text COLLATE pg_catalog."default" NOT NULL,
-    typeGroep text COLLATE pg_catalog."default" NOT NULL,
+    type_groep text COLLATE pg_catalog."default" NOT NULL,
     omschrijving text COLLATE pg_catalog."default",
     actief boolean NOT NULL,
     CONSTRAINT toezichtgroepen_pkey PRIMARY KEY (uuid)
@@ -277,8 +277,8 @@ CREATE TABLE IF NOT EXISTS public.identiteiten
     voornaam text COLLATE pg_catalog."default" NOT NULL,
     gebruikersnaam text COLLATE pg_catalog."default" NOT NULL,
     systeem boolean NOT NULL,
-    typeIdentiteit text COLLATE pg_catalog."default" NOT NULL,
-    voId text COLLATE pg_catalog."default",
+    type_identiteit text COLLATE pg_catalog."default" NOT NULL,
+    vo_id text COLLATE pg_catalog."default",
     bron text COLLATE pg_catalog."default",
     actief boolean NOT NULL,
     CONSTRAINT identiteiten_pkey PRIMARY KEY (uuid)
