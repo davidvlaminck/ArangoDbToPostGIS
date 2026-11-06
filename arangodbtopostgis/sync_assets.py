@@ -182,8 +182,6 @@ class AssetsSyncer(BaseSyncer):
         asset_uuid = self._asset_uuid_from_edge(edge)
         bestek_uuid = self._parse_bestek_uuid(edge)
         volgnummer_raw = edge.get("volgnummer")
-        if volgnummer_raw is None:
-            volgnummer_raw = edge.get("volgorde")  # transitional fallback
         if not asset_uuid or not bestek_uuid or volgnummer_raw is None:
             return None
         try:
