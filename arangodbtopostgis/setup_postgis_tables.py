@@ -6,13 +6,14 @@ from pathlib import Path
 
 import psycopg
 
-SQL_FILE: Path = Path(__file__).resolve().parents[2] / "sql" / "postgis_tables.sql"
+SQL_FILE: Path = Path(__file__).resolve().parents[1] / "sql" / "postgis_tables.sql"
 
 # Tables this module is responsible for creating.
 MANAGED_TABLES: tuple[str, ...] = (
     "params",
     "agents",
     "assettypes",
+    "assets",
     "bestekken",
     "beheerders",
     "toezichtgroepen",

@@ -62,6 +62,49 @@ CREATE TABLE IF NOT EXISTS public.assettypes
     CONSTRAINT assettypes_pkey PRIMARY KEY (uuid)
 );
 
+
+-- Table: public.assets
+-- Column mapping derived from attributes.md (Arango assets, namespace buckets normalized).
+-- geometry and bs are intentionally skipped for now (planned separate tables).
+
+CREATE TABLE IF NOT EXISTS public.assets
+(
+    uuid uuid NOT NULL,
+    assettype uuid,                        -- full assettype uuid (resolved from Arango assettype_key)
+    "isActief" boolean,
+    "assetId_identificator" text,
+    "assetId_toegekendDoor" text,
+    "typeURI" text,
+    toestand text,
+    notitie text,
+    naam text,
+    naampad text,
+    naampad_parts jsonb,
+    naampad_parent text,
+    "assetVersie_context" text,
+    "assetVersie_timestamp" timestamptz,
+    "assetVersie_versienummer" text,
+    "datumOprichtingObject" date,
+    -- namespace buckets (jsonb) / special fields
+    geo jsonb,
+    wkt text,
+    loc jsonb,
+    grp jsonb,
+    wl jsonb,
+    bz jsonb,
+    tz jsonb,
+    lgc jsonb,
+    ins jsonb,
+    ond jsonb,
+    vtc jsonb,
+    -- all remaining Arango fields not mapped above (excl. @id, @type)
+    attributes jsonb,
+    CONSTRAINT assets_pkey PRIMARY KEY (uuid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_assets_assettype ON public.assets (assettype);
+CREATE INDEX IF NOT EXISTS idx_assets_is_actief ON public.assets ("isActief");
+
 DO $$
 BEGIN
     ALTER TABLE IF EXISTS public.assets
@@ -105,15 +148,20 @@ CREATE TABLE IF NOT EXISTS public.beheerders
 
 DO $$
 BEGIN
-    ALTER TABLE IF EXISTS public.assets
-        ADD CONSTRAINT beheerders_assets_fkey
-        FOREIGN KEY (schadebeheerder)
-        REFERENCES public.beheerders (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE NO ACTION
-        NOT VALID;
-EXCEPTION WHEN duplicate_object THEN
-    -- constraint already exists, skip
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'assets' AND column_name = 'schadebeheerder'
+    ) THEN
+        ALTER TABLE public.assets
+            ADD CONSTRAINT beheerders_assets_fkey
+            FOREIGN KEY (schadebeheerder)
+            REFERENCES public.beheerders (uuid) MATCH SIMPLE
+            ON UPDATE NO ACTION
+            ON DELETE NO ACTION
+            NOT VALID;
+    END IF;
+EXCEPTION WHEN duplicate_object OR undefined_column OR undefined_table THEN
+    NULL;
 END $$;
 
 
@@ -131,15 +179,20 @@ CREATE TABLE IF NOT EXISTS public.toezichtgroepen
 
 DO $$
 BEGIN
-    ALTER TABLE IF EXISTS public.assets
-        ADD CONSTRAINT toezichtgroepen_assets_fkey
-        FOREIGN KEY (toezichtgroep)
-        REFERENCES public.toezichtgroepen (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE NO ACTION
-        NOT VALID;
-EXCEPTION WHEN duplicate_object THEN
-    -- constraint already exists, skip
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'assets' AND column_name = 'toezichtgroep'
+    ) THEN
+        ALTER TABLE public.assets
+            ADD CONSTRAINT toezichtgroepen_assets_fkey
+            FOREIGN KEY (toezichtgroep)
+            REFERENCES public.toezichtgroepen (uuid) MATCH SIMPLE
+            ON UPDATE NO ACTION
+            ON DELETE NO ACTION
+            NOT VALID;
+    END IF;
+EXCEPTION WHEN duplicate_object OR undefined_column OR undefined_table THEN
+    NULL;
 END $$;
 
 
@@ -161,15 +214,20 @@ CREATE TABLE IF NOT EXISTS public.identiteiten
 
 DO $$
 BEGIN
-    ALTER TABLE IF EXISTS public.assets
-        ADD CONSTRAINT identiteiten_assets_fkey
-        FOREIGN KEY (toezichter)
-        REFERENCES public.identiteiten (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE NO ACTION
-        NOT VALID;
-EXCEPTION WHEN duplicate_object THEN
-    -- constraint already exists, skip
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'assets' AND column_name = 'toezichter'
+    ) THEN
+        ALTER TABLE public.assets
+            ADD CONSTRAINT identiteiten_assets_fkey
+            FOREIGN KEY (toezichter)
+            REFERENCES public.identiteiten (uuid) MATCH SIMPLE
+            ON UPDATE NO ACTION
+            ON DELETE NO ACTION
+            NOT VALID;
+    END IF;
+EXCEPTION WHEN duplicate_object OR undefined_column OR undefined_table THEN
+    NULL;
 END $$;
 
 

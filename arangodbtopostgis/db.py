@@ -55,15 +55,21 @@ def execute_upsert(
     if not rows:
         return 0
 
+    def qident(name: str) -> str:
+        return '"' + name.replace('"', '""') + '"'
+
+    def qtable(name: str) -> str:
+        return ".".join(qident(p) for p in name.split("."))
+
     columns = list(field_map.values())
-    col_list = ", ".join(columns)
+    col_list = ", ".join(qident(col) for col in columns)
     placeholders = ", ".join(["%s"] * len(columns))
-    update_set = ", ".join(f"{col} = EXCLUDED.{col}" for col in columns if col != pk)
+    update_set = ", ".join(f"{qident(col)} = EXCLUDED.{qident(col)}" for col in columns if col != pk)
 
     sql = f"""
-        INSERT INTO {table} ({col_list})
+        INSERT INTO {qtable(table)} ({col_list})
         VALUES ({placeholders})
-        ON CONFLICT ({pk}) DO UPDATE
+        ON CONFLICT ({qident(pk)}) DO UPDATE
         SET {update_set}
     """
 
@@ -71,7 +77,7 @@ def execute_upsert(
     with conn.cursor() as cur:
         for start in range(0, len(rows), batch_size):
             batch = rows[start : start + batch_size]
-            params = [[_sanitize(row[col]) for col in columns] for row in batch]
+            params = [[_sanitize(row.get(col)) for col in columns] for row in batch]
             cur.executemany(sql, params)
             total += len(batch)
     conn.commit()
