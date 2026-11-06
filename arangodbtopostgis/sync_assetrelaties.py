@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import time
 from typing import Any
 
 import psycopg
@@ -215,6 +216,7 @@ class AssetrelatiesSyncer:
     def run_resumable(self, resume_cursor: str | None = None) -> int:
         self._load_relatietype_lookups()
         db = get_arango_db(self.arango_env)
+        t0 = time.perf_counter()
         after = None if resume_cursor in (None, "", "__DONE__") else resume_cursor
         bind: dict[str, Any] = {"after": after or ""}
         limit_clause = "LIMIT @limit" if self.limit else ""
@@ -276,6 +278,7 @@ class AssetrelatiesSyncer:
             + (f", {skipped_invalid} skipped (invalid/missing relatietype)" if skipped_invalid else "")
             + (f", {skipped_db} skipped (db/FK)" if skipped_db else "")
             + f"; inserted {inserted} into {self.POSTGIS_TABLE}"
+            + f" in {time.perf_counter()-t0:.1f}s"
         )
         return inserted
 

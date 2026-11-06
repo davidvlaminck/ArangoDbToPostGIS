@@ -16,6 +16,7 @@ from datetime import date, datetime
 from typing import Any
 
 import psycopg
+from psycopg.extras import execute_values
 from psycopg.types.json import Jsonb
 
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
@@ -179,12 +180,11 @@ class AssetsSyncer(BaseSyncer):
             return
         columns = list(field_map.values())
         col_list = ", ".join('"' + c.replace('"', '""') + '"' for c in columns)
-        placeholders = ", ".join(["%s"] * len(columns))
         table = ".".join('"' + part.replace('"', '""') + '"' for part in self.POSTGIS_TABLE.split("."))
-        sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
+        sql = f"INSERT INTO {table} ({col_list}) VALUES %s"
         params = [[None if row.get(col) == "" else row.get(col) for col in columns] for row in rows]
         with conn.cursor() as cur:
-            cur.executemany(sql, params)
+            execute_values(cur, sql, params, page_size=len(params))
 
     def run(self) -> int:
         return self.run_resumable(None)
