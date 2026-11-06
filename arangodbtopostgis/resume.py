@@ -131,7 +131,9 @@ def mark_step_started(conn: psycopg.Connection, step: str) -> None:
     set_param(conn, CURRENT_STEP_KEY, value_text=step)
     set_param(conn, CURRENT_STEP_NUM_KEY, value_int=STEP_NUMBERS.get(step))
     if step in RESUMABLE_STEPS:
-        set_param(conn, DONE_KEY.format(step=step), value_bool=False)
+        done = get_param(conn, DONE_KEY.format(step=step))
+        if not (done and done.get("value_bool") is True):
+            set_param(conn, DONE_KEY.format(step=step), value_bool=False)
     conn.commit()
 
 
