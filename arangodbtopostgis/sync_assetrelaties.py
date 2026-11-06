@@ -231,7 +231,8 @@ class AssetrelatiesSyncer:
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT to_regclass('public.assetrelaties')")
-                if cur.fetchone()[0] is None:
+                table_row = cur.fetchone()
+                if table_row is None or table_row[0] is None:
                     raise RuntimeError("public.assetrelaties table missing; run setup_postgis_tables first")
 
             fetched = inserted = skipped_invalid = skipped_db = batch_n = 0

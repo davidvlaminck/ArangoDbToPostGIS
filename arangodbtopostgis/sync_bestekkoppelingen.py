@@ -146,7 +146,8 @@ class BestekkoppelingenSyncer:
         try:
             with conn.cursor() as cur:
                 cur.execute("SELECT to_regclass('public.bestekkoppelingen')")
-                if cur.fetchone()[0] is None:
+                table_row = cur.fetchone()
+                if table_row is None or table_row[0] is None:
                     raise RuntimeError("public.bestekkoppelingen missing; run setup_postgis_tables first")
 
             after = resume_cursor
