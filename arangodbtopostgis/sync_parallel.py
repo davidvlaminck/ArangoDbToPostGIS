@@ -222,6 +222,7 @@ def parallel_export(
     pbar_desc: str = "rows",
     truncate_tables: tuple[str, ...] = (),
     post_load: Callable[[Any], None] | None = None,
+    cursor_column: str = "uuid",
 ) -> int:
     """Parallel, resumable bulk-export of one ArangoDB collection into PostGIS.
 
@@ -278,12 +279,20 @@ def parallel_export(
             cursor = param.get("value_text") if param else None
             if cursor is None:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        f"SELECT max(uuid::text) FROM public.{pg_table} "
-                        "WHERE (CAST(%s AS uuid) IS NULL OR uuid >= CAST(%s AS uuid)) "
-                        "  AND (CAST(%s AS uuid) IS NULL OR uuid < CAST(%s AS uuid))",
-                        (lo, lo, hi, hi),
-                    )
+                    if cursor_column == "uuid":
+                        cur.execute(
+                            f"SELECT max(uuid::text) FROM public.{pg_table} "
+                            "WHERE (CAST(%s AS uuid) IS NULL OR uuid >= CAST(%s AS uuid)) "
+                            "  AND (CAST(%s AS uuid) IS NULL OR uuid < CAST(%s AS uuid))",
+                            (lo, lo, hi, hi),
+                        )
+                    else:
+                        cur.execute(
+                            f"SELECT max({cursor_column}) FROM public.{pg_table} "
+                            "WHERE (%s::text IS NULL OR {cursor_column} >= %s::text) "
+                            "  AND (%s::text IS NULL OR {cursor_column} < %s::text)".format(cursor_column=cursor_column),
+                            (lo, lo, hi, hi),
+                        )
                     row = cur.fetchone()
                     cursor = str(row[0]) if row and row[0] else None
                 if hi is not None and cursor is not None and cursor >= hi:

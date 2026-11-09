@@ -1,73 +1,38 @@
-"""Sync ``assetrelaties`` (Arango edge collection) to PostGIS ``public.assetrelaties``.
+"""Parallel chunked export of Arango ``assetrelaties`` edge collection → PostGIS.
 
-Mapping choices
---------------
-- ``uuid``: edge ``_key`` (stable edge UUID in this dataset).
-- ``bron_asset_uuid`` / ``doel_asset_uuid``: parsed from ``_from`` / ``_to`` (``assets/<uuid>``).
-- ``relatietype_uuid`` (FK to ``relatietypes``): resolved via lookup built from the
-  Arango ``relatietypes`` collection.
-  Preferred key: ``relatietype_key`` -> ``relatietypes._key`` (explicit 4-char key present
-  on edges). Fallbacks: ``RelatieObject_typeURI`` / ``@type`` -> ``relatietypes.uri``.
-  The limited size of ``relatietypes`` makes in-memory lookup cheap and robust.
-- ``bron_type`` / ``doel_type``: ``RelatieObject_bron.@type`` / ``RelatieObject_doel.@type``.
-- ``type_uri``: ``RelatieObject_typeURI`` or ``@type``.
-- ``asset_id_identificator`` / ``asset_id_toegekend_door``: flattened from
-  ``RelatieObject_assetId`` (DtcIdentificator).
-- ``actief``: ``AIMDBStatus_isActief``.
-- Excluded (redundant): ``RelatieObject_bronAssetId``, ``RelatieObject_doelAssetId``.
-- Remaining unmapped fields: ``attributes`` (jsonb).
+Uses the same mechanism as ``sync_assets``: key-range partitioning,
+per-worker Arango + Postgres connections, COPY protocol via ``sync_parallel``.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
-import os
-import time
 from typing import Any
 
-import psycopg
-from psycopg.types.json import Jsonb
-
-from arangodbtopostgis.db import get_arango_db, get_postgis_connection
-from arangodbtopostgis.resume import mark_step_done, save_cursor_and_commit
+from arangodbtopostgis.db import get_arango_db
+from arangodbtopostgis.sync_parallel import parallel_export
 
 logger = logging.getLogger(__name__)
 
+COLLECTION = "assetrelaties"
+PG_TABLE = "assetrelaties"
+RESUME_STEP = "assetrelaties"
+
+COLUMNS = (
+    "uuid", "bron_asset_uuid", "doel_asset_uuid", "relatietype_uuid",
+    "bron_type", "doel_type", "type_uri",
+    "asset_id_identificator", "asset_id_toegekend_door", "actief", "attributes",
+)
+
 EXCLUDED_ATTRIBUTE_KEYS = {
-    "_id",
-    "_key",
-    "_rev",
-    "_from",
-    "_to",
-    "@id",
-    "@type",
-    "uuid",
-    "relatietype_key",
-    "RelatieObject_bron",
-    "RelatieObject_doel",
-    "RelatieObject_bronAssetId",
-    "RelatieObject_doelAssetId",
-    "RelatieObject_assetId",
-    "RelatieObject_typeURI",
-    "AIMDBStatus_isActief",
-    "isActief",
-    "isDeleted",
+    "_id", "_key", "_rev", "_from", "_to", "@id", "@type", "uuid",
+    "relatietype_key", "RelatieObject_bron", "RelatieObject_doel",
+    "RelatieObject_bronAssetId", "RelatieObject_doelAssetId",
+    "RelatieObject_assetId", "RelatieObject_typeURI",
+    "AIMDBStatus_isActief", "isActief", "isDeleted",
 }
-
-
-def _sanitize(value: Any) -> Any:
-    if value == "":
-        return None
-    return value
-
-
-def _qident(name: str) -> str:
-    return '"' + name.replace('"', '""') + '"'
-
-
-def _qtable(name: str) -> str:
-    return ".".join(_qident(p) for p in name.split("."))
 
 
 def _asset_uuid_from_ref(ref: Any) -> str | None:
@@ -76,228 +41,123 @@ def _asset_uuid_from_ref(ref: Any) -> str | None:
     return ref.split("/", 1)[1] or None
 
 
-class AssetrelatiesSyncer:
-    ARANGO_COLLECTION = "assetrelaties"
-    POSTGIS_TABLE = "public.assetrelaties"
-    RESUME_STEP = "assetrelaties"
-    BATCH_SIZE = 2000
-    FIELD_MAP = {
-        "uuid": "uuid",
-        "bron_asset_uuid": "bron_asset_uuid",
-        "doel_asset_uuid": "doel_asset_uuid",
-        "relatietype_uuid": "relatietype_uuid",
-        "bron_type": "bron_type",
-        "doel_type": "doel_type",
-        "type_uri": "type_uri",
-        "asset_id_identificator": "asset_id_identificator",
-        "asset_id_toegekend_door": "asset_id_toegekend_door",
-        "actief": "actief",
-        "attributes": "attributes",
-    }
-    REQUIRED_COLUMNS = ("uuid", "bron_asset_uuid", "doel_asset_uuid", "relatietype_uuid")
+def _load_relatietype_lookups(db: Any) -> tuple[dict[str, str], dict[str, str]]:
+    cursor = db.aql.execute("FOR rt IN relatietypes RETURN {_key: rt._key, uuid: rt.uuid, uri: rt.uri}")
+    by_key: dict[str, str] = {}
+    by_uri: dict[str, str] = {}
+    for d in cursor:
+        uuid = d.get("uuid")
+        key = d.get("_key")
+        uri = d.get("uri")
+        if not uuid:
+            continue
+        if key:
+            by_key[str(key)] = uuid
+        if uri:
+            by_uri[str(uri)] = uuid
+    logger.info("assetrelaties: loaded %d relatietype key mappings, %d uri mappings", len(by_key), len(by_uri))
+    return by_key, by_uri
 
-    def __init__(
-        self,
-        arango_env: str = "prd",
-        postgis_env: str = "prd",
-        *,
-        limit: int | None = None,
-    ) -> None:
-        self.arango_env = arango_env
-        self.postgis_env = postgis_env
-        self.limit = limit
-        self._rt_by_key: dict[str, str] = {}
-        self._rt_by_uri: dict[str, str] = {}
 
-    def _load_relatietype_lookups(self) -> None:
-        db = get_arango_db(self.arango_env)
-        cursor = db.aql.execute("FOR rt IN relatietypes RETURN {_key: rt._key, uuid: rt.uuid, uri: rt.uri}")
-        for d in cursor:
-            uuid = d.get("uuid")
-            key = d.get("_key")
-            uri = d.get("uri")
-            if not uuid:
-                continue
-            if key:
-                self._rt_by_key[str(key)] = uuid
-            if uri:
-                self._rt_by_uri[str(uri)] = uuid
-        logger.info(
-            f"{self.__class__.__name__}: loaded {len(self._rt_by_key)} relatietype key mappings, "
-            f"{len(self._rt_by_uri)} uri mappings"
-        )
+def _remaining_attributes(doc: dict[str, Any]) -> str | None:
+    remaining = {k: v for k, v in doc.items() if k not in EXCLUDED_ATTRIBUTE_KEYS}
+    return json.dumps(remaining, separators=(",", ":")) if remaining else None
 
-    def _resolve_relatietype(self, doc: dict[str, Any]) -> str | None:
-        rt_key = doc.get("relatietype_key")
-        if rt_key is not None:
-            resolved = self._rt_by_key.get(str(rt_key))
+
+def _resolve_relatietype(doc: dict[str, Any], by_key: dict[str, str], by_uri: dict[str, str]) -> str | None:
+    rt_key = doc.get("relatietype_key")
+    if rt_key is not None:
+        resolved = by_key.get(str(rt_key))
+        if resolved:
+            return resolved
+    for uri in (doc.get("RelatieObject_typeURI"), doc.get("@type")):
+        if isinstance(uri, str) and uri:
+            resolved = by_uri.get(uri)
             if resolved:
                 return resolved
-        for uri in (doc.get("RelatieObject_typeURI"), doc.get("@type")):
-            if isinstance(uri, str) and uri:
-                resolved = self._rt_by_uri.get(uri)
-                if resolved:
-                    return resolved
+    return None
+
+
+def _transform(doc: dict[str, Any], lookup: tuple[dict[str, str], dict[str, str]]) -> dict[str, Any] | None:
+    by_key, by_uri = lookup
+    uuid = doc.get("_key") or doc.get("uuid")
+    bron = _asset_uuid_from_ref(doc.get("_from"))
+    doel = _asset_uuid_from_ref(doc.get("_to"))
+    if not uuid or not bron or not doel:
         return None
+    bron_obj = doc.get("RelatieObject_bron") or {}
+    doel_obj = doc.get("RelatieObject_doel") or {}
+    asset_id = doc.get("RelatieObject_assetId") or {}
+    type_uri = doc.get("RelatieObject_typeURI") or doc.get("@type")
+    actief = doc.get("AIMDBStatus_isActief")
+    if actief is None:
+        is_deleted = doc.get("isDeleted")
+        if is_deleted is not None:
+            actief = not bool(is_deleted)
+    return {
+        "uuid": uuid,
+        "bron_asset_uuid": bron,
+        "doel_asset_uuid": doel,
+        "relatietype_uuid": _resolve_relatietype(doc, by_key, by_uri),
+        "bron_type": bron_obj.get("@type") if isinstance(bron_obj, dict) else None,
+        "doel_type": doel_obj.get("@type") if isinstance(doel_obj, dict) else None,
+        "type_uri": type_uri if isinstance(type_uri, str) and type_uri else None,
+        "asset_id_identificator": (
+            asset_id.get("DtcIdentificator_identificator") if isinstance(asset_id, dict) else None
+        ),
+        "asset_id_toegekend_door": (
+            asset_id.get("DtcIdentificator_toegekendDoor") if isinstance(asset_id, dict) else None
+        ),
+        "actief": actief,
+        "attributes": _remaining_attributes(doc),
+    }
 
-    @staticmethod
-    def _remaining_attributes(doc: dict[str, Any]) -> Jsonb | None:
-        remaining = {k: v for k, v in doc.items() if k not in EXCLUDED_ATTRIBUTE_KEYS}
-        return Jsonb(remaining) if remaining else None
 
-    def _transform(self, doc: dict[str, Any]) -> dict[str, Any] | None:
-        uuid = doc.get("_key") or doc.get("uuid")
-        bron = _asset_uuid_from_ref(doc.get("_from"))
-        doel = _asset_uuid_from_ref(doc.get("_to"))
-        if not uuid or not bron or not doel:
-            return None
-        bron_obj = doc.get("RelatieObject_bron") or {}
-        doel_obj = doc.get("RelatieObject_doel") or {}
-        asset_id = doc.get("RelatieObject_assetId") or {}
-        type_uri = doc.get("RelatieObject_typeURI") or doc.get("@type")
-        actief = doc.get("AIMDBStatus_isActief")
-        if actief is None:
-            is_deleted = doc.get("isDeleted")
-            if is_deleted is not None:
-                actief = not bool(is_deleted)
-        return {
-            "uuid": uuid,
-            "bron_asset_uuid": bron,
-            "doel_asset_uuid": doel,
-            "relatietype_uuid": self._resolve_relatietype(doc),
-            "bron_type": bron_obj.get("@type") if isinstance(bron_obj, dict) else None,
-            "doel_type": doel_obj.get("@type") if isinstance(doel_obj, dict) else None,
-            "type_uri": type_uri if isinstance(type_uri, str) and type_uri else None,
-            "asset_id_identificator": (asset_id.get("DtcIdentificator_identificator") if isinstance(asset_id, dict) else None),
-            "asset_id_toegekend_door": (asset_id.get("DtcIdentificator_toegekendDoor") if isinstance(asset_id, dict) else None),
-            "actief": actief,
-            "attributes": self._remaining_attributes(doc),
-        }
+def export_assetrelaties(
+    arango_env: str = "prd",
+    postgis_env: str = "prd",
+    *,
+    workers: int = 4,
+) -> int:
+    """Full fresh export of Arango ``assetrelaties`` into PostGIS via parallel COPY chunks.
 
-    def _insert_batch_and_checkpoint(
-        self, conn: psycopg.Connection, rows: list[dict[str, Any]], cursor: str | None
-    ) -> tuple[int, int]:
-        """Insert rows with savepoints; commit cursor in same transaction as successful rows."""
-        if not rows and cursor is None:
-            return 0, 0
-        columns = list(self.FIELD_MAP.values())
-        col_list = ", ".join(_qident(c) for c in columns)
-        placeholders = ", ".join(["%s"] * len(columns))
-        sql = f"""
-            INSERT INTO {_qtable(self.POSTGIS_TABLE)} ({col_list})
-            VALUES ({placeholders})
-        """
-        inserted = skipped = 0
-        try:
-            with conn.cursor() as cur:
-                for row in rows:
-                    params = [_sanitize(row.get(col)) for col in columns]
-                    try:
-                        cur.execute("SAVEPOINT ar_row")
-                        cur.execute(sql, params)
-                        cur.execute("RELEASE SAVEPOINT ar_row")
-                        inserted += 1
-                    except Exception as exc:
-                        cur.execute("ROLLBACK TO SAVEPOINT ar_row")
-                        skipped += 1
-                        if skipped <= 10:
-                            logger.warning(
-                                f"{self.__class__.__name__}: skipped {row.get('uuid')} "
-                                f"(bron={row.get('bron_asset_uuid')} doel={row.get('doel_asset_uuid')}): {exc}"
-                            )
-            save_cursor_and_commit(conn, self.RESUME_STEP, cursor)
-        except Exception:
-            conn.rollback()
-            raise
-        return inserted, skipped
+    Returns the number of rows loaded.
+    """
+    db = get_arango_db(arango_env)
+    by_key, by_uri = _load_relatietype_lookups(db)
+    lookup = (by_key, by_uri)
 
-    _upsert_batch = _insert_batch_and_checkpoint
-
-    def run_resumable(self, resume_cursor: str | None = None) -> int:
-        self._load_relatietype_lookups()
-        db = get_arango_db(self.arango_env)
-        t0 = time.perf_counter()
-        after = None if resume_cursor in (None, "", "__DONE__") else resume_cursor
-        bind: dict[str, Any] = {"after": after or ""}
-        limit_clause = "LIMIT @limit" if self.limit else ""
-        if self.limit:
-            bind["limit"] = self.limit
-        query = f"""
-            FOR d IN assetrelaties
-            FILTER d._key > @after
-            SORT d._key ASC
-            {limit_clause}
-            RETURN d
-        """
-        conn = get_postgis_connection(self.postgis_env)
-        try:
-            with conn.cursor() as cur:
-                cur.execute("SELECT to_regclass('public.assetrelaties')")
-                if cur.fetchone()[0] is None:
-                    raise RuntimeError("public.assetrelaties table missing; run setup_postgis_tables first")
-
-            fetched = inserted = skipped_invalid = skipped_db = batch_n = 0
-            batch: list[dict[str, Any]] = []
-            last_key: str | None = after
-            for doc in db.aql.execute(query, bind_vars=bind, batch_size=self.BATCH_SIZE):
-                last_key = doc.get("_key") or last_key
-                row = self._transform(doc)
-                if row is None or not all(row.get(c) is not None and row.get(c) != "" for c in self.REQUIRED_COLUMNS):
-                    skipped_invalid += 1
-                    if skipped_invalid <= 10 and row is not None and not row.get("relatietype_uuid"):
-                        logger.info(
-                            f"{self.__class__.__name__}: skipped {row.get('uuid')} "
-                            f"(unresolved relatietype key={doc.get('relatietype_key')} "
-                            f"type={doc.get('RelatieObject_typeURI') or doc.get('@type')})"
-                        )
-                    continue
-                batch.append(row)
-                fetched += 1
-                if len(batch) >= self.BATCH_SIZE:
-                    ins, skip = self._insert_batch_and_checkpoint(conn, batch, last_key)
-                    inserted += ins
-                    skipped_db += skip
-                    batch = []
-                    batch_n += 1
-                    if batch_n % 100 == 0:
-                        logger.info(
-                            f"{self.__class__.__name__}: progress fetched={fetched} "
-                            f"inserted={inserted} skipped_db={skipped_db} cursor={last_key}"
-                        )
-            if batch or last_key != after:
-                ins, skip = self._insert_batch_and_checkpoint(conn, batch, last_key)
-                inserted += ins
-                skipped_db += skip
-            mark_step_done(conn, self.RESUME_STEP)
-        finally:
-            conn.close()
-        logger.info(
-            f"{self.__class__.__name__}: fetched {fetched} from '{self.ARANGO_COLLECTION}'"
-            + (f" (limit={self.limit})" if self.limit else "")
-            + (f", {skipped_invalid} skipped (invalid/missing relatietype)" if skipped_invalid else "")
-            + (f", {skipped_db} skipped (db/FK)" if skipped_db else "")
-            + f"; inserted {inserted} into {self.POSTGIS_TABLE}"
-            + f" in {time.perf_counter()-t0:.1f}s"
-        )
-        return inserted
-
-    def run(self) -> int:
-        return self.run_resumable(None)
+    return parallel_export(
+        arango_env=arango_env,
+        postgis_env=postgis_env,
+        step=RESUME_STEP,
+        collection=COLLECTION,
+        pg_table=PG_TABLE,
+        columns=COLUMNS,
+        geom_table=None,
+        geom_columns=(),
+        geom_map=None,
+        transform=_transform,
+        lookup=lookup,
+        workers=workers,
+        pbar_desc="assetrelaties",
+        truncate_tables=(),
+        post_load=None,
+    )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sync assetrelaties ArangoDB -> PostGIS")
+    parser = argparse.ArgumentParser(description="Export Arango assetrelaties to PostGIS via parallel COPY chunks")
     parser.add_argument("--arango-env", default="prd")
     parser.add_argument("--postgis-env", default="prd")
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=int(os.environ.get("ASSETRELATIES_LIMIT", "0")),
-        help="Max assetrelaties to sync; 0 = no limit (default: 0)",
-    )
+    parser.add_argument("--workers", type=int, default=4, help="Number of parallel chunk workers")
     args = parser.parse_args()
-    limit = args.limit if args.limit and args.limit > 0 else None
-    AssetrelatiesSyncer(arango_env=args.arango_env, postgis_env=args.postgis_env, limit=limit).run()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S%z",
+    )
+    export_assetrelaties(arango_env=args.arango_env, postgis_env=args.postgis_env, workers=args.workers)
 
 
 if __name__ == "__main__":
