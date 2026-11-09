@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from typing import Any
@@ -53,11 +54,11 @@ def _postgis_install_instructions(dbname: str, user: str, exc: Exception) -> str
     )
 
 
-def check_postgis_access() -> bool:
+def check_postgis_access(env: str = "prd") -> bool:
     """Verify PostGIS credentials and ensure the PostGIS extension is available."""
     conn = None
     try:
-        conn = get_postgis_connection("prd")
+        conn = get_postgis_connection(env)
         with conn.cursor() as cur:
             cur.execute("SELECT 1")
             cur.fetchone()
@@ -96,10 +97,10 @@ def check_postgis_access() -> bool:
     return True
 
 
-def check_arango_access() -> bool:
+def check_arango_access(env: str = "prd") -> bool:
     """Verify the ArangoDB credentials are valid."""
     try:
-        db = get_arango_db("prd")
+        db = get_arango_db(env)
         db.collections()
     except Exception as exc:
         logger.warning(f"ArangoDB access FAILED: {exc}")
@@ -108,9 +109,9 @@ def check_arango_access() -> bool:
     return True
 
 
-def setup_postgis_tables() -> None:
+def setup_postgis_tables(env: str = "prd") -> None:
     """Ensure all managed PostGIS tables exist."""
-    conn = get_postgis_connection("prd")
+    conn = get_postgis_connection(env)
     try:
         ensure_tables(conn)
     finally:
@@ -125,7 +126,7 @@ EXPORTERS: dict[str, Any] = {
 }
 
 
-def fill_database() -> None:
+def fill_database(env: str = "prd") -> None:
     """Run every configured syncer with params-based resume/checkpoints."""
     syncers_by_step: dict[str, Any] = {
         getattr(s, "RESUME_STEP", s.ARANGO_COLLECTION): s
@@ -139,7 +140,7 @@ def fill_database() -> None:
             ToezichtgroepenSyncer(),
         ]
     }
-    conn0 = get_postgis_connection("prd")
+    conn0 = get_postgis_connection(env)
     try:
         param = get_param(conn0, "sync_current_step")
     finally:
@@ -148,7 +149,7 @@ def fill_database() -> None:
     start = STEP_ORDER.index(current) if current in STEP_ORDER else 0
     for step in STEP_ORDER[start:]:
         if step in EXPORTERS:
-            conn = get_postgis_connection("prd")
+            conn = get_postgis_connection(env)
             try:
                 mark_step_started(conn, step)
                 cursor = prepare_step(conn, step)
@@ -157,10 +158,10 @@ def fill_database() -> None:
             if cursor == "__DONE__":
                 continue
             logger.info("%s: running parallel export", step)
-            EXPORTERS[step](arango_env="prd", postgis_env="prd")
+            EXPORTERS[step](arango_env=env, postgis_env=env)
             continue
         syncer = syncers_by_step[step]
-        conn = get_postgis_connection("prd")
+        conn = get_postgis_connection(env)
         try:
             mark_step_started(conn, step)
             cursor = prepare_step(conn, step)
@@ -176,14 +177,23 @@ def fill_database() -> None:
 
 def main() -> None:
     _configure_logging()
-    postgis_ok = check_postgis_access()
-    arango_ok = check_arango_access()
+    parser = argparse.ArgumentParser(description="Copy data from ArangoDB to PostGIS")
+    parser.add_argument(
+        "--env",
+        default="prd",
+        help="Environment name used to look up DB credentials (default: prd)",
+    )
+    args = parser.parse_args()
+    env = args.env
+
+    postgis_ok = check_postgis_access(env)
+    arango_ok = check_arango_access(env)
     if not postgis_ok or not arango_ok:
         logger.warning("Aborting: database access check failed.")
         sys.exit(1)
 
-    setup_postgis_tables()
-    fill_database()
+    setup_postgis_tables(env)
+    fill_database(env)
 
 
 if __name__ == "__main__":

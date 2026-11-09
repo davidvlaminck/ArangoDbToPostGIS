@@ -49,6 +49,10 @@ coverage.xml
 .dmypy.json
 dmypy.json
 
+# Credentials (local only — real JSON files must not be committed)
+config/*.json
+!config/*.example.json
+
 # OS
 .DS_Store
 Thumbs.db

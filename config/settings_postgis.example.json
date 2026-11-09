@@ -1,0 +1,18 @@
+{
+  "databases": {
+    "dev": {
+      "host": "127.0.0.1",
+      "port": 5432,
+      "database": "infra_db",
+      "user": "your_user",
+      "password": "your_password"
+    },
+    "prd": {
+      "host": "127.0.0.1",
+      "port": 5432,
+      "database": "infra_db",
+      "user": "your_user",
+      "password": "your_password"
+    }
+  }
+}
