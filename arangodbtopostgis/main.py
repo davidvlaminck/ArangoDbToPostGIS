@@ -6,17 +6,19 @@ import logging
 import sys
 from typing import Any
 
+from arangodbtopostgis import (
+    export_assetrelaties,
+    export_assets,
+    export_bestekkoppelingen,
+    export_betrokkenerelaties,
+)
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
 from arangodbtopostgis.resume import RESUMABLE_STEPS, STEP_ORDER, get_param, prepare_step
 from arangodbtopostgis.setup_postgis_tables import ensure_tables
 from arangodbtopostgis.sync_agents import AgentsSyncer
-from arangodbtopostgis.sync_assetrelaties import AssetrelatiesSyncer
-from arangodbtopostgis.sync_assets import AssetsSyncer
 from arangodbtopostgis.sync_assettypes import AssettypesSyncer
 from arangodbtopostgis.sync_beheerders import BeheerdersSyncer
 from arangodbtopostgis.sync_bestekken import BestekkenSyncer
-from arangodbtopostgis.sync_bestekkoppelingen import BestekkoppelingenSyncer
-from arangodbtopostgis.sync_betrokkenerelaties import BetrokkenerelatiesSyncer
 from arangodbtopostgis.sync_identiteiten import IdentiteitenSyncer
 from arangodbtopostgis.sync_relatietypes import RelatietypesSyncer
 from arangodbtopostgis.sync_toezichtgroepen import ToezichtgroepenSyncer
@@ -111,21 +113,28 @@ def setup_postgis_tables() -> None:
         conn.close()
 
 
+EXPORTERS: dict[str, Any] = {
+    "assets": export_assets.export_assets,
+    "bestekkoppelingen": export_bestekkoppelingen.export_bestekkoppelingen,
+    "assetrelaties": export_assetrelaties.export_assetrelaties,
+    "betrokkenerelaties": export_betrokkenerelaties.export_betrokkenerelaties,
+}
+
+
 def fill_database() -> None:
     """Run every configured syncer with params-based resume/checkpoints."""
-    syncers: list[Any] = [
-        AgentsSyncer(),
-        AssettypesSyncer(),
-        BeheerdersSyncer(),
-        BestekkenSyncer(),
-        IdentiteitenSyncer(),
-        RelatietypesSyncer(),
-        ToezichtgroepenSyncer(),
-        AssetsSyncer(limit=None),
-        BestekkoppelingenSyncer(),
-        AssetrelatiesSyncer(),
-        BetrokkenerelatiesSyncer(),
-    ]
+    syncers_by_step: dict[str, Any] = {
+        getattr(s, "RESUME_STEP", s.ARANGO_COLLECTION): s
+        for s in [
+            AgentsSyncer(),
+            AssettypesSyncer(),
+            BeheerdersSyncer(),
+            BestekkenSyncer(),
+            IdentiteitenSyncer(),
+            RelatietypesSyncer(),
+            ToezichtgroepenSyncer(),
+        ]
+    }
     conn0 = get_postgis_connection("prd")
     try:
         param = get_param(conn0, "sync_current_step")
@@ -133,11 +142,12 @@ def fill_database() -> None:
         conn0.close()
     current = param.get("value_text") if param else None
     start = STEP_ORDER.index(current) if current in STEP_ORDER else 0
-    syncers = syncers[start:]
-    for syncer in syncers:
-        step = getattr(syncer, "RESUME_STEP", syncer.ARANGO_COLLECTION)
-        if step not in STEP_ORDER:
-            raise ValueError(f"unknown resume step: {step!r}")
+    for step in STEP_ORDER[start:]:
+        if step in EXPORTERS:
+            logger.info("%s: running parallel export", step)
+            EXPORTERS[step](arango_env="dev", postgis_env="prd")
+            continue
+        syncer = syncers_by_step[step]
         conn = get_postgis_connection("prd")
         try:
             cursor = prepare_step(conn, step)
