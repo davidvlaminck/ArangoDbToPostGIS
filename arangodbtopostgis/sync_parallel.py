@@ -198,7 +198,7 @@ def load_chunk(
         conn.close()
 
     elapsed = time.perf_counter() - t0
-    logger.info(
+    logger.debug(
         "worker %d: done — %d rows, %d related in %.1fs",
         worker_id, n_rows, n_geom, elapsed,
     )
