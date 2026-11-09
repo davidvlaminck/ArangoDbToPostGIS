@@ -1,6 +1,6 @@
 # ArangoDbToPostGIS
 
-Changed: 2026-11-09 — example config files live in the repo; real credential JSON goes outside the repo.
+Changed: 2026-11-09 — example config files live in the repo; real credential JSON goes outside the repo; dropped stale Tables/Collections reference (now points to sql/postgis_tables.sql, setup_postgis_tables.py, resume.py).
 
 The idea of this repo is to copy the data from a ArangoDb to a PostGIS db.
 
@@ -86,86 +86,12 @@ See `AGENTS.md` for the full procedure. In short:
 
 ---
 
-## 1. Tables / Collections
+## Authoritative sources
 
-### PostGIS — 24 user tables (+ `spatial_ref_sys` system table)
+The README intentionally does not duplicate the table/collection inventory — that lives in three places and this doc is not kept in sync with them:
 
-`agents`, `assetrelaties`, `assets`, `assettypes`, `attributen`, `attribuutkoppelingen`, `attribuutwaarden`, `beheerders`, `bestekken`, `bestekkoppelingen`, `betrokkenerelaties`, `elek_aansluitingen`, `gemeente`, `geometrie`, `identiteiten`, `locatie`, `params`, `regex`, `relatietypes`, `toezichtgroepen`, `vplan_koppelingen`, `weglocatie_aanduidingen`, `weglocatie_wegsegmenten`, `weglocaties`
+- `sql/postgis_tables.sql` — DDL for all managed PostGIS tables + views (`aantallen`, `assets_geometry`, `*_relaties` views).
+- `arangodbtopostgis/setup_postgis_tables.py` (`MANAGED_TABLES`) — which tables the pipeline ensures exist.
+- `arangodbtopostgis/resume.py` (`STEP_ORDER`, `STEP_TABLES`) — pipeline step order and resume state.
 
-System: `spatial_ref_sys` (PostGIS)
-
-### ArangoDB — 20 collections (+ 8 `_*` system collections)
-
-**Document (10):**
-`agents`, `assets`, `assettypes`, `beheerders`, `bestekken`, `identiteiten`, `params`, `relatietypes`, `toezichtgroepen`, `aansluitingrefs`
-
-**Edge (10):**
-`aansluitingen`, `assetrelaties`, `bestekkoppelingen`, `betrokkenerelaties`, `bevestiging_relaties`, `heeftkeuring_relaties`, `hoortbij_relaties`, `sturing_relaties`, `voedt_relaties`, `gemigreerdnaar_relaties`
-
-**Graphs** (edge definitions live here, not per-collection):
-`assetrelaties_graph`, `voedt_graph`, `sturing_graph`, `bevestiging_graph`, `hoortbij_graph`, `heeftkeuring_graph`, `gemigreerdnaar_graph`, `betrokkenerelaties_graph`, `bestekkoppelingen_graph`, `aansluitingen_graph`
-
-System collections: `_graphs`, `_appbundles`, `_frontend`, `_analyzers`, `_aqlfunctions`, `_queues`, `_jobs`, `_apps`
-
----
-
-## 2. Common / matching names
-
-### Direct name matches (PostGIS table ↔ Arango collection)
-
-| PostGIS table | Arango collection | Arango type | Done |
-|---------------|-------------------|-------------|---------|
-| `agents` | `agents` | document | [x] |
-| `assets` | `assets` | document | [ ] |
-| `assettypes` | `assettypes` | document | [x] |
-| `beheerders` | `beheerders` | document | [x] |
-| `bestekken` | `bestekken` | document | [x] |
-| `identiteiten` | `identiteiten` | document | [x] |
-| `params` | `params` | document | [ ] |
-| `relatietypes` | `relatietypes` | document | [x] |
-| `toezichtgroepen` | `toezichtgroepen` | document | [x] |
-| `assetrelaties` | `assetrelaties` | edge | [ ] |
-| `bestekkoppelingen` | `bestekkoppelingen` | edge | [ ] |
-| `betrokkenerelaties` | `betrokkenerelaties` | edge | [ ] |
-
-afgeleide graphs
-
-| PostGIS table | Arango collection | Arango type | Done |
-|---------------|-------------------|-------------|---------|
-| `bevestiging_relaties` | `bevestiging_relaties` | edge | [ ] |
-| `heeftkeuring_relaties` | `heeftkeuring_relaties` | edge | [ ] |
-| `hoortbij_relaties` | `hoortbij_relaties` | edge | [ ] |
-| `sturing_relaties` | `sturing_relaties` | edge | [ ] |
-| `voedt_relaties` | `voedt_relaties` | edge | [ ] |
-
-### Near matches
-- `elek_aansluitingen` (PG) ↔ `aansluitingen` + `aansluitingrefs` (Arango)
-- `geometrie` (PG table) ↔ `geo` / `wkt` / `geometry` fields on Arango `assets`
-- `gemigreerdnaar_relaties` (Arango edge) has no direct PG table counterpart
-
-### PostGIS-only tables
-`attributen`, `attribuutkoppelingen`, `attribuutwaarden`, `gemeente`, `geometrie`, `locatie`, `regex`, `vplan_koppelingen`, `weglocatie_aanduidingen`, `weglocatie_wegsegmenten`, `weglocaties`, `aantallen`
-
-### Arango-only collections
-`aansluitingrefs` (document), plus all 8 `_*` system collections
-
----
-
-## 3. Common fields (how to join / link across DBs)
-
-| Field | PostGIS type | Arango field | Notes |
-|-------|-------------|--------------|-------|
-| `uuid` | `uuid` (PK) | `uuid` | Primary identifier on both sides |
-| `naam` | `text` | `naam` | Name, on most document tables/collections |
-| `actief` | `boolean` | `actief` | Active flag |
-| `type` | `typebeheerder`/`typeidentiteit`/`typegroep` | `type` | Type categorization |
-| `relatietype` | `uuid` | `relatietype` / `relatietype_key` | Relationship type reference |
-| `attributen` | `json` | `attributen` | JSON attributes |
-| geometry | `geometry`/`USER-DEFINED` | `geo`, `wkt`, `geometry` | Spatial |
-
-### Edge linking
-Arango edge documents reference connected docs via `_from=<coll>/<key>` and `_to=<coll>/<key>` (e.g. `assets/<uuid>` → `bestekken/<uuid>`).
-
-In PostGIS the equivalent link columns are `bronuuid` → `doeluuid` on the `*_relaties`, `betrokkenerelaties`, and `bestekkoppelingen` tables.
-
-Example edge targets seen: `assets/*`, `bestekken/*`, `agents/*` — confirming edges connect the same core document entities that exist as PostGIS tables.
+Key cross-DB join fields (Arango `_from`/`_to` → PostGIS `bronuuid` → `doeluuid` on `*_relaties`, `betrokkenerelaties`, `bestekkoppelingen`) are documented in `AGENTS.md`.

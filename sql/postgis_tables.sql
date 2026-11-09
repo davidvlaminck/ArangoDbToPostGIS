@@ -1,6 +1,10 @@
 -- Table definitions copied from AWVInfraPostGISSyncer/setup_tables_querys.sql
 -- (same level as this repo)
 --
+-- Changed: 2026-11-09 — relation views now filter on relatietype_uuid (exact,
+-- index-backed) instead of type_uri ILIKE; added assets_geometry, heeftkeuring,
+-- gemigreerdnaar views; switched materialized -> regular views.
+--
 -- NOT NULL annotations added after inspecting live data: every column
 -- marked NOT NULL here had zero NULL (and zero empty-string) values across
 -- all rows at analysis time. Columns that had any NULL/empty are left nullable.
@@ -463,7 +467,7 @@ EXCEPTION WHEN undefined_table OR undefined_column THEN
 END $$;
 
 -- View: aantallen (row counts across all managed tables)
-CREATE MATERIALIZED VIEW IF NOT EXISTS public.aantallen AS
+CREATE OR REPLACE VIEW public.aantallen AS
 SELECT 'agents' AS tabel, count(*) AS aantal FROM public.agents
 UNION ALL SELECT 'assettypes', count(*) FROM public.assettypes
 UNION ALL SELECT 'assets', count(*) FROM public.assets
@@ -477,17 +481,28 @@ UNION ALL SELECT 'relatietypes', count(*) FROM public.relatietypes
 UNION ALL SELECT 'assetrelaties', count(*) FROM public.assetrelaties
 UNION ALL SELECT 'betrokkenerelaties', count(*) FROM public.betrokkenerelaties;
 
--- Relation-type filtered views
-CREATE MATERIALIZED VIEW IF NOT EXISTS public.bevestiging_relaties AS
-SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%bevestig%';
-CREATE MATERIALIZED VIEW IF NOT EXISTS public.sturing_relaties AS
-SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%sturing%';
-CREATE MATERIALIZED VIEW IF NOT EXISTS public.hoortbij_relaties AS
-SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%hoortbij%';
-CREATE MATERIALIZED VIEW IF NOT EXISTS public.voedt_relaties AS
-SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%voedt%';
-CREATE MATERIALIZED VIEW IF NOT EXISTS public.ligtop_relaties AS
-SELECT * FROM public.assetrelaties WHERE type_uri ILIKE '%ligtop%';
+-- View: assets_geometry (geometry per asset, preferring computed geom over WKT)
+CREATE OR REPLACE VIEW public.assets_geometry AS
+SELECT assets.uuid,
+       COALESCE(g.geom, ST_SetSRID(ST_GeomFromEWKT(assets.wkt), 3812)) AS asset_geometry,
+       COALESCE(g.wkt, assets.wkt) AS asset_wkt_string
+FROM public.assets
+LEFT JOIN public.geometrie g ON g.asset_uuid = assets.uuid;
+
+CREATE OR REPLACE VIEW public.bevestiging_relaties AS
+SELECT * FROM public.assetrelaties WHERE relatietype_uuid = '3ff9bf1c-d852-442e-a044-6200fe064b20';
+CREATE OR REPLACE VIEW public.sturing_relaties AS
+SELECT * FROM public.assetrelaties WHERE relatietype_uuid = '93c88f93-6e8c-4af3-a723-7e7a6d6956ac';
+CREATE OR REPLACE VIEW public.hoortbij_relaties AS
+SELECT * FROM public.assetrelaties WHERE relatietype_uuid = '812dd4f3-c34e-43d1-88f1-3bcd0b1e89c2';
+CREATE OR REPLACE VIEW public.voedt_relaties AS
+SELECT * FROM public.assetrelaties WHERE relatietype_uuid = 'f2c5c4a1-0899-4053-b3b3-2d662c717b44';
+CREATE OR REPLACE VIEW public.ligtop_relaties AS
+SELECT * FROM public.assetrelaties WHERE relatietype_uuid = '321c18b8-92ca-4188-a28a-f00cdfaa0e31';
+CREATE OR REPLACE VIEW public.heeftkeuring_relaties AS
+SELECT * FROM public.assetrelaties WHERE relatietype_uuid = '8677a92e-7021-4e39-a66a-251891b42bfd';
+CREATE OR REPLACE VIEW public.gemigreerdnaar_relaties AS
+SELECT * FROM public.assetrelaties WHERE relatietype_uuid = 'f0ed1efa-fe29-4861-89dc-5d3bc40f0894';
 
 -- Additional indexes for FK / filtered columns
 CREATE INDEX IF NOT EXISTS idx_assets_assettype ON public.assets (assettype);
