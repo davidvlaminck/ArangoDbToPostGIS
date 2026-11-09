@@ -45,7 +45,7 @@ class BaseSyncer:
     # Rows are inserted in batches of this size.
     BATCH_SIZE: int = 1000
 
-    def __init__(self, arango_env: str = "dev", postgis_env: str = "prd") -> None:
+    def __init__(self, arango_env: str = "prd", postgis_env: str = "prd") -> None:
         self.arango_env = arango_env
         self.postgis_env = postgis_env
         if not self.RESUME_STEP:

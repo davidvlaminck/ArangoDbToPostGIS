@@ -98,7 +98,7 @@ class AssetrelatiesSyncer:
 
     def __init__(
         self,
-        arango_env: str = "dev",
+        arango_env: str = "prd",
         postgis_env: str = "prd",
         *,
         limit: int | None = None,
@@ -287,7 +287,7 @@ class AssetrelatiesSyncer:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sync assetrelaties ArangoDB -> PostGIS")
-    parser.add_argument("--arango-env", default="dev")
+    parser.add_argument("--arango-env", default="prd")
     parser.add_argument("--postgis-env", default="prd")
     parser.add_argument(
         "--limit",

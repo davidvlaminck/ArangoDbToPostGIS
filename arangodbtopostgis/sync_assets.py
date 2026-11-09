@@ -193,7 +193,7 @@ def export_assets(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export Arango assets to PostGIS via parallel COPY chunks")
-    parser.add_argument("--arango-env", default="dev")
+    parser.add_argument("--arango-env", default="prd")
     parser.add_argument("--postgis-env", default="prd")
     parser.add_argument("--workers", type=int, default=4, help="Number of parallel chunk workers")
     args = parser.parse_args()

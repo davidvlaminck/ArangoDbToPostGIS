@@ -207,7 +207,7 @@ def load_chunk(
 
 def parallel_export(
     *,
-    arango_env: str = "dev",
+    arango_env: str = "prd",
     postgis_env: str = "prd",
     step: str,
     collection: str,

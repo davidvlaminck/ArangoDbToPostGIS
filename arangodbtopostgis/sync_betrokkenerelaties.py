@@ -98,7 +98,7 @@ class BetrokkenerelatiesSyncer:
     }
     REQUIRED_COLUMNS = ("uuid", "doel_agent_uuid")
 
-    def __init__(self, arango_env: str = "dev", postgis_env: str = "prd", *, limit: int | None = None) -> None:
+    def __init__(self, arango_env: str = "prd", postgis_env: str = "prd", *, limit: int | None = None) -> None:
         self.arango_env = arango_env
         self.postgis_env = postgis_env
         self.limit = limit
@@ -307,7 +307,7 @@ class BetrokkenerelatiesSyncer:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sync betrokkenerelaties ArangoDB -> PostGIS")
-    parser.add_argument("--arango-env", default="dev")
+    parser.add_argument("--arango-env", default="prd")
     parser.add_argument("--postgis-env", default="prd")
     parser.add_argument("--limit", type=int, default=int(os.environ.get("BETROKKENERELATIES_LIMIT", "0")))
     args = parser.parse_args()

@@ -26,7 +26,7 @@ class BestekkoppelingenSyncer:
     RESUME_STEP = "bestekkoppelingen"
     BATCH_SIZE = 2000
 
-    def __init__(self, arango_env: str = "dev", postgis_env: str = "prd", *, limit: int | None = None) -> None:
+    def __init__(self, arango_env: str = "prd", postgis_env: str = "prd", *, limit: int | None = None) -> None:
         self.arango_env = arango_env
         self.postgis_env = postgis_env
         self.limit = limit
@@ -210,7 +210,7 @@ class BestekkoppelingenSyncer:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sync bestekkoppelingen ArangoDB -> PostGIS")
-    parser.add_argument("--arango-env", default="dev")
+    parser.add_argument("--arango-env", default="prd")
     parser.add_argument("--postgis-env", default="prd")
     parser.add_argument("--limit", type=int, default=int(os.environ.get("BESTEKKOPPELINGEN_LIMIT", "0")))
     args = parser.parse_args()

@@ -23,7 +23,7 @@ def load_json(filename: str) -> dict[str, Any]:
         return json.load(f)
 
 
-def arango_creds(env: str = "dev") -> dict[str, Any]:
+def arango_creds(env: str = "prd") -> dict[str, Any]:
     """Return ArangoDB connection parameters for the given environment."""
     cfg = load_json("settings_arangodb.json")
     db = cfg["databases"][env]

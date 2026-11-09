@@ -14,13 +14,13 @@ from arangodbtopostgis.config import arango_creds, postgis_creds
 logger = logging.getLogger(__name__)
 
 
-def get_arango_client(env: str = "dev") -> ArangoClient:
+def get_arango_client(env: str = "prd") -> ArangoClient:
     """Create an :class:`ArangoClient` configured for the given environment."""
     creds = arango_creds(env)
     return ArangoClient(hosts=creds["hosts"])
 
 
-def get_arango_db(env: str = "dev") -> Any:
+def get_arango_db(env: str = "prd") -> Any:
     """Return an authenticated Arango database connection."""
     creds = arango_creds(env)
     client = get_arango_client(env)

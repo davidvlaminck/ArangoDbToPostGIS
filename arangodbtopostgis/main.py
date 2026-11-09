@@ -101,7 +101,7 @@ def check_postgis_access() -> bool:
 def check_arango_access() -> bool:
     """Verify the ArangoDB credentials are valid."""
     try:
-        db = get_arango_db("dev")
+        db = get_arango_db("prd")
         db.collections()
     except Exception as exc:
         logger.warning(f"ArangoDB access FAILED: {exc}")
@@ -159,7 +159,7 @@ def fill_database() -> None:
             if cursor == "__DONE__":
                 continue
             logger.info("%s: running parallel export", step)
-            EXPORTERS[step](arango_env="dev", postgis_env="prd")
+            EXPORTERS[step](arango_env="prd", postgis_env="prd")
             continue
         syncer = syncers_by_step[step]
         conn = get_postgis_connection("prd")

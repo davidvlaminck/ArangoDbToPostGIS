@@ -176,7 +176,7 @@ def export_table(
     columns: tuple[str, ...],
     aql_query: str,
     transform: Callable[[dict[str, Any]], dict[str, Any] | None],
-    arango_env: str = "dev",
+    arango_env: str = "prd",
     postgis_env: str = "prd",
     workers: int = 4,
     resume_step: str | None = None,
@@ -257,7 +257,7 @@ def export_table(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export an Arango collection to PostGIS via parallel COPY chunks")
     parser.add_argument("--table", required=True, help="Table/collection name to export")
-    parser.add_argument("--arango-env", default="dev")
+    parser.add_argument("--arango-env", default="prd")
     parser.add_argument("--postgis-env", default="prd")
     parser.add_argument("--workers", type=int, default=4, help="Number of parallel chunk workers")
     parser.parse_args()
