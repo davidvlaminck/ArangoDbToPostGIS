@@ -19,16 +19,21 @@ import csv
 import io
 import json
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
 from typing import Any
+
+from tqdm import tqdm
 
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
 from arangodbtopostgis.resume import (
     CURSOR_KEY,
     DONE_KEY,
     clear_param,
+    get_param,
+    save_cursor_and_commit,
     set_param,
     truncate_table,
 )
@@ -181,13 +186,13 @@ def _row_csv(row: dict[str, Any], columns: tuple[str, ...]) -> str:
     return out.getvalue()
 
 
-def _key_boundaries(db: Any, num_workers: int) -> list[tuple[str | None, str | None]]:
-    """Return ``[(lo, hi), ...]`` key ranges that partition ``assets`` by ``_key``."""
+def _key_boundaries(db: Any, num_workers: int) -> tuple[int, list[tuple[str | None, str | None]]]:
+    """Return ``(count, [(lo, hi), ...])`` partitioning ``assets`` by ``_key``."""
     count = int(list(db.aql.execute("RETURN LENGTH(assets)"))[0])
     if count == 0:
-        return []
+        return count, []
     if num_workers <= 1:
-        return [(None, None)]
+        return count, [(None, None)]
 
     boundaries: list[str] = []
     for i in range(1, num_workers):
@@ -205,7 +210,7 @@ def _key_boundaries(db: Any, num_workers: int) -> list[tuple[str | None, str | N
         ranges.append((prev, b))
         prev = b
     ranges.append((prev, None))
-    return ranges
+    return count, ranges
 
 
 def _load_chunk(
@@ -215,10 +220,17 @@ def _load_chunk(
     lookup: dict[str, str],
     lo: str | None,
     hi: str | None,
+    resume_cursor: str | None,
+    cursor_key: str,
+    pbar: tqdm,
+    pbar_lock: threading.Lock,
 ) -> dict[str, int]:
-    """Load one ``_key`` range chunk (assets + geometrie) via COPY.
+    """Load one ``_key`` range chunk (assets + geometrie) via batched COPY.
 
-    Returns a dict with asset and geometry row counts.
+    Commits every 10k assets together with the matching geometrie rows and a
+    resume cursor, so a stopped run can restart from the last committed
+    ``_key`` without duplicates. ``pbar`` is advanced by this worker under
+    ``pbar_lock``.
     """
     db = get_arango_db(arango_env)
 
@@ -230,19 +242,21 @@ def _load_chunk(
     if hi is not None:
         conditions.append("d._key < @hi")
         bind_vars["hi"] = hi
+    if resume_cursor:
+        conditions.append("d._key > @after")
+        bind_vars["after"] = resume_cursor
     where = " AND ".join(conditions)
     if where:
         where = "FILTER " + where
     query = f"FOR d IN assets {where} SORT d._key ASC RETURN d"
 
     range_tag = f"[{lo!r}, {hi!r})"
-    logger.info("worker %d: starting chunk %s", worker_id, range_tag)
+    logger.info("worker %d: starting chunk %s (resume from %r)", worker_id, range_tag, resume_cursor)
 
     t0 = time.perf_counter()
     n_assets = 0
     n_geom = 0
-    geom_rows: list[tuple[str, str]] = []
-    last_key: str | None = None
+    last_key: str | None = resume_cursor
 
     conn = get_postgis_connection(postgis_env)
     try:
@@ -250,35 +264,45 @@ def _load_chunk(
         sql_assets = f'COPY public.assets ({cols}) FROM STDIN WITH (FORMAT csv)'
         sql_geom = "COPY public.geometrie (asset_uuid, wkt) FROM STDIN WITH (FORMAT csv)"
 
-        with conn.cursor() as cur:
-            with cur.copy(sql_assets) as copy_assets:
-                batch_n = 0
-                for doc in db.aql.execute(query, bind_vars=bind_vars, batch_size=10000):
-                    last_key = doc.get("_key") or last_key
-                    try:
-                        row = _transform(doc, lookup)
-                    except Exception:
-                        continue
-                    if row is None:
-                        continue
-                    copy_assets.write(_row_csv(row, ASSETS_COLUMNS))
-                    n_assets += 1
-                    if row.get("wkt"):
-                        geom_rows.append((row["uuid"], row["wkt"]))
-                    batch_n += 1
-                    if batch_n % 50000 == 0:
-                        logger.info(
-                            "worker %d: cursor='%s' progress — %d assets processed",
-                            worker_id, last_key, n_assets,
-                        )
+        def flush(batch: list[str], geom_batch: list[tuple[str, str]], key: str | None) -> None:
+            """COPY one batch of assets + geometrie and persist the cursor."""
+            if not batch:
+                return
+            with conn.cursor() as cur:
+                with cur.copy(sql_assets) as copy_assets:
+                    for csv_row in batch:
+                        copy_assets.write(csv_row)
+                with cur.copy(sql_geom) as copy_geom:
+                    for uuid, wkt in geom_batch:
+                        buf = io.StringIO()
+                        csv.writer(buf).writerow([uuid, wkt])
+                        copy_geom.write(buf.getvalue())
+            save_cursor_and_commit(conn, cursor_key, key)
 
-            with cur.copy(sql_geom) as copy_geom:
-                for uuid, wkt in geom_rows:
-                    buf = io.StringIO()
-                    csv.writer(buf).writerow([uuid, wkt])
-                    copy_geom.write(buf.getvalue())
-                    n_geom += 1
-        conn.commit()
+        batch: list[str] = []
+        geom_batch: list[tuple[str, str]] = []
+        for doc in db.aql.execute(query, bind_vars=bind_vars, batch_size=10000):
+            last_key = doc.get("_key") or last_key
+            try:
+                row = _transform(doc, lookup)
+            except Exception:
+                continue
+            if row is None:
+                continue
+            batch.append(_row_csv(row, ASSETS_COLUMNS))
+            n_assets += 1
+            if row.get("wkt"):
+                geom_batch.append((row["uuid"], row["wkt"]))
+            if len(batch) >= 10000:
+                flush(batch, geom_batch, last_key)
+                with pbar_lock:
+                    pbar.update(10000)
+                batch = []
+                geom_batch = []
+        if batch:
+            flush(batch, geom_batch, last_key)
+            with pbar_lock:
+                pbar.update(len(batch))
     finally:
         conn.close()
 
@@ -298,21 +322,36 @@ def export_assets(
 ) -> int:
     """Full fresh export of Arango ``assets`` into PostGIS via parallel COPY chunks.
 
-    Returns the number of asset rows loaded.
+    Resumable: each worker's last committed ``_key`` is stored in
+    ``sync_cursor:assets:worker:<i>`` and committed with the data batch, so a
+    stopped run resumes without duplicates. Returns the number of asset rows
+    loaded in this run.
     """
     t0 = time.perf_counter()
     db = get_arango_db(arango_env)
     lookup = _load_assettype_lookup(db)
     logger.info("assets: loaded %d assettype mappings", len(lookup))
 
-    ranges = _key_boundaries(db, workers)
+    count, ranges = _key_boundaries(db, workers)
     logger.info("assets: %d chunk ranges for %d workers", len(ranges), workers)
 
-    # Truncate target tables once before parallel load.
+    # --- truncate target tables for a fresh run only ---
     conn = get_postgis_connection(postgis_env)
     try:
-        truncate_table(conn, "public.assets")
-        truncate_table(conn, "public.geometrie")
+        done = get_param(conn, DONE_KEY.format(step="assets"))
+        if done and done.get("value_bool") is True:
+            logger.info("assets: marked done; skipping")
+            return 0
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM public.assets")
+            existing = int(cur.fetchone()[0])
+        if existing == 0:
+            # fresh run: ensure a clean slate
+            truncate_table(conn, "public.assets")
+            truncate_table(conn, "public.geometrie")
+            for i in range(workers):
+                clear_param(conn, CURSOR_KEY.format(step=f"assets:worker:{i}"))
+            conn.commit()
         # geometrie.geom is NOT NULL; we COPY only (asset_uuid, wkt) and compute
         # geom in bulk afterwards, so drop the constraint for the load window.
         with conn.cursor() as cur:
@@ -321,29 +360,64 @@ def export_assets(
     finally:
         conn.close()
 
+    # --- determine per-worker resume cursors from the data already loaded ---
+    # Prefer the per-worker cursor param (last committed _key); fall back to
+    # max(uuid) per chunk range so partial loads from older exporter runs
+    # (which never wrote per-worker cursors) still resume correctly.
+    cursors: dict[int, str | None] = {}
+    conn = get_postgis_connection(postgis_env)
+    try:
+        for i, (lo, hi) in enumerate(ranges):
+            param = get_param(conn, CURSOR_KEY.format(step=f"assets:worker:{i}"))
+            cursor = param.get("value_text") if param else None
+            if cursor is None:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT max(uuid::text) FROM public.assets "
+                        "WHERE (CAST(%s AS uuid) IS NULL OR uuid >= CAST(%s AS uuid)) "
+                        "  AND (CAST(%s AS uuid) IS NULL OR uuid < CAST(%s AS uuid))",
+                        (lo, lo, hi, hi),
+                    )
+                    row = cur.fetchone()
+                    cursor = str(row[0]) if row and row[0] else None
+            if hi is not None and cursor is not None and cursor >= hi:
+                cursor = None
+            cursors[i] = cursor
+        with conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM public.assets")
+            already_loaded = int(cur.fetchone()[0])
+    finally:
+        conn.close()
+
     # --- parallel load of assets + geometrie ---
     n_assets = 0
     n_geom = 0
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {
-            executor.submit(
-                _load_chunk, i, arango_env, postgis_env, lookup, lo, hi
-            ): (lo, hi)
-            for i, (lo, hi) in enumerate(ranges)
-        }
-        for fut in as_completed(futures):
-            lo, hi = futures[fut]
-            try:
-                result = fut.result()
-                n_assets += result["assets"]
-                n_geom += result["geom"]
-                logger.info(
-                    "assets: chunk [%s, %s) loaded %d assets, %d geometry",
-                    lo, hi, result["assets"], result["geom"],
-                )
-            except Exception as exc:
-                logger.error("assets: chunk [%s, %s) failed: %s", lo, hi, exc)
-                raise
+    pbar_lock = threading.Lock()
+    with tqdm(total=count, desc="assets", unit="asset", unit_scale=True, ncols=80, initial=already_loaded) as pbar:
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {}
+            for i, (lo, hi) in enumerate(ranges):
+                cursor = cursors[i]
+                if hi is not None and cursor is not None and cursor >= hi:
+                    logger.info("assets: chunk %d [%s, %s) already complete, skipping", i, lo, hi)
+                    continue
+                futures[executor.submit(
+                    _load_chunk, i, arango_env, postgis_env, lookup, lo, hi, cursor,
+                    CURSOR_KEY.format(step=f"assets:worker:{i}"), pbar, pbar_lock,
+                )] = (i, lo, hi)
+            for fut in as_completed(futures):
+                i, lo, hi = futures[fut]
+                try:
+                    result = fut.result()
+                    n_assets += result["assets"]
+                    n_geom += result["geom"]
+                    logger.info(
+                        "assets: chunk %d [%s, %s) loaded %d assets, %d geometry",
+                        i, lo, hi, result["assets"], result["geom"],
+                    )
+                except Exception as exc:
+                    logger.error("assets: chunk %d [%s, %s) failed: %s", i, lo, hi, exc)
+                    raise
 
     # --- compute geometry in bulk and restore NOT NULL ---
     conn = get_postgis_connection(postgis_env)
@@ -363,7 +437,8 @@ def export_assets(
     conn = get_postgis_connection(postgis_env)
     try:
         set_param(conn, DONE_KEY.format(step="assets"), value_bool=True)
-        clear_param(conn, CURSOR_KEY.format(step="assets"))
+        for i in range(workers):
+            clear_param(conn, CURSOR_KEY.format(step=f"assets:worker:{i}"))
         conn.commit()
     finally:
         conn.close()

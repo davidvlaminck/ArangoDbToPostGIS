@@ -6,6 +6,7 @@ requires-python = ">=3.13"
 dependencies = [
     "psycopg[binary]",
     "python-arango",
+    "tqdm",
 ]
 
 [dependency-groups]
@@ -48,5 +49,5 @@ disallow_untyped_defs = true
 check_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["arango.*", "psycopg.*"]
+module = ["arango.*", "psycopg.*", "tqdm"]
 ignore_missing_imports = true

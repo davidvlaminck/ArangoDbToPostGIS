@@ -13,7 +13,13 @@ from arangodbtopostgis import (
     export_betrokkenerelaties,
 )
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
-from arangodbtopostgis.resume import RESUMABLE_STEPS, STEP_ORDER, get_param, prepare_step
+from arangodbtopostgis.resume import (
+    RESUMABLE_STEPS,
+    STEP_ORDER,
+    get_param,
+    mark_step_started,
+    prepare_step,
+)
 from arangodbtopostgis.setup_postgis_tables import ensure_tables
 from arangodbtopostgis.sync_agents import AgentsSyncer
 from arangodbtopostgis.sync_assettypes import AssettypesSyncer
@@ -144,12 +150,21 @@ def fill_database() -> None:
     start = STEP_ORDER.index(current) if current in STEP_ORDER else 0
     for step in STEP_ORDER[start:]:
         if step in EXPORTERS:
+            conn = get_postgis_connection("prd")
+            try:
+                mark_step_started(conn, step)
+                cursor = prepare_step(conn, step)
+            finally:
+                conn.close()
+            if cursor == "__DONE__":
+                continue
             logger.info("%s: running parallel export", step)
             EXPORTERS[step](arango_env="dev", postgis_env="prd")
             continue
         syncer = syncers_by_step[step]
         conn = get_postgis_connection("prd")
         try:
+            mark_step_started(conn, step)
             cursor = prepare_step(conn, step)
         finally:
             conn.close()
