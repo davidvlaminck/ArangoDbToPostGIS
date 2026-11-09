@@ -89,6 +89,7 @@ def load_chunk(
     worker_id: int,
     arango_env: str,
     postgis_env: str,
+    step: str,
     collection: str,
     *,
     pg_table: str,
@@ -163,7 +164,7 @@ def load_chunk(
                             buf = io.StringIO()
                             csv.writer(buf).writerow([uuid, wkt])
                             copy_geom.write(buf.getvalue())
-            save_cursor_and_commit(conn, cursor_key, key)
+            save_cursor_and_commit(conn, step, key)
 
         batch: list[str] = []
         geom_batch: list[tuple[str, str]] = []
@@ -331,6 +332,7 @@ def parallel_export(
                     i,
                     arango_env,
                     postgis_env,
+                    step,
                     collection,
                     pg_table=pg_table,
                     columns=columns,

@@ -6,12 +6,10 @@ import logging
 import sys
 from typing import Any
 
-from arangodbtopostgis import (
-    export_betrokkenerelaties,
-)
 from arangodbtopostgis.sync_assets import export_assets as sync_export_assets
 from arangodbtopostgis.sync_assetrelaties import export_assetrelaties as sync_export_assetrelaties
 from arangodbtopostgis.sync_bestekkoppelingen import export_bestekkoppelingen as sync_export_bestekkoppelingen
+from arangodbtopostgis.sync_betrokkenerelaties import export_betrokkenerelaties as sync_export_betrokkenerelaties
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
 from arangodbtopostgis.resume import (
     RESUMABLE_STEPS,
@@ -123,7 +121,7 @@ EXPORTERS: dict[str, Any] = {
     "assets": sync_export_assets,
     "bestekkoppelingen": sync_export_bestekkoppelingen,
     "assetrelaties": sync_export_assetrelaties,
-    "betrokkenerelaties": export_betrokkenerelaties.export_betrokkenerelaties,
+    "betrokkenerelaties": sync_export_betrokkenerelaties,
 }
 
 
