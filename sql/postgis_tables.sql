@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS public.agents
     actief boolean NOT NULL,
     contact_info jsonb NOT NULL,
     ovo_code text,
+    agent_identificator text,
     PRIMARY KEY (uuid)
 );
 

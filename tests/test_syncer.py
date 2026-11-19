@@ -90,3 +90,45 @@ def test_relatietypes_syncer_skips_rows_without_uri() -> None:
     row = syncer._transform({"uuid": "def", "naam": "Heeft", "uri": "http://x/Heeft"})
     assert row is not None
     assert row["uri"] == "http://x/Heeft"
+
+
+def test_agents_syncer_extracts_agent_identificator() -> None:
+    from arangodbtopostgis.sync_agents import AgentsSyncer
+
+    syncer = AgentsSyncer()
+    doc = {
+        "uuid": "0027e368-fe2e-4b95-ae54-d311d0ef31f8",
+        "AIMDBStatus_isActief": True,
+        "purl": {
+            "Agent_naam": "Openbaar Centrum voor Maatschappelijk Welzijn van Bocholt",
+            "Agent_agentId": {
+                "DtcIdentificator_identificator": "0027e368-fe2e-4b95-ae54-d311d0ef31f8-cHVybDpBZ2VudA",
+                "DtcIdentificator_toegekendDoor": "AWV",
+            },
+        },
+        "tz": {
+            "Agent_voId": None,
+            "Agent_ovoCode": "OVO002684",
+        },
+    }
+    row = syncer._transform(doc)
+    assert row is not None
+    assert row["agent_identificator"] == "0027e368-fe2e-4b95-ae54-d311d0ef31f8-cHVybDpBZ2VudA"
+    assert row["ovo_code"] == "OVO002684"
+
+
+def test_agents_syncer_missing_agent_identificator() -> None:
+    from arangodbtopostgis.sync_agents import AgentsSyncer
+
+    syncer = AgentsSyncer()
+    doc = {
+        "uuid": "0027e368-fe2e-4b95-ae54-d311d0ef31f8",
+        "AIMDBStatus_isActief": True,
+        "purl": {
+            "Agent_naam": "Some Agent",
+        },
+        "tz": {},
+    }
+    row = syncer._transform(doc)
+    assert row is not None
+    assert row["agent_identificator"] is None
