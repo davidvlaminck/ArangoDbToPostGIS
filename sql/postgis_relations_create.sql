@@ -10,7 +10,7 @@ BEGIN
         MATCH SIMPLE ON UPDATE NO ACTION ON DELETE CASCADE NOT VALID;
 EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
 END $$;
-CREATE INDEX IF NOT EXISTS public.idx_geometrie_geom ON public.geometrie USING GIST (geom);
+CREATE INDEX IF NOT EXISTS idx_geometrie_geom ON public.geometrie USING GIST (geom);
 
 DO $$
 BEGIN
@@ -29,8 +29,8 @@ BEGIN
         MATCH SIMPLE ON UPDATE NO ACTION ON DELETE NO ACTION NOT VALID;
 EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
 END $$;
-CREATE INDEX IF NOT EXISTS public.idx_bestekkoppelingen_bestek_uuid ON public.bestekkoppelingen (bestek_uuid);
-CREATE INDEX IF NOT EXISTS public.idx_bestekkoppelingen_asset_uuid ON public.bestekkoppelingen (asset_uuid);
+CREATE INDEX IF NOT EXISTS idx_bestekkoppelingen_bestek_uuid ON public.bestekkoppelingen (bestek_uuid);
+CREATE INDEX IF NOT EXISTS idx_bestekkoppelingen_asset_uuid ON public.bestekkoppelingen (asset_uuid);
 
 DO $$
 BEGIN
@@ -40,8 +40,8 @@ BEGIN
         MATCH SIMPLE ON UPDATE NO ACTION ON DELETE NO ACTION NOT VALID;
 EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
 END $$;
-CREATE INDEX IF NOT EXISTS public.idx_assets_assettype ON public.assets (assettype);
-CREATE INDEX IF NOT EXISTS public.idx_assets_actief ON public.assets (actief);
+CREATE INDEX IF NOT EXISTS idx_assets_assettype ON public.assets (assettype);
+CREATE INDEX IF NOT EXISTS idx_assets_actief ON public.assets (actief);
 
 DO $$
 BEGIN
@@ -111,11 +111,11 @@ BEGIN
         MATCH SIMPLE ON UPDATE NO ACTION ON DELETE NO ACTION NOT VALID;
 EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
 END $$;
-CREATE INDEX IF NOT EXISTS public.idx_assetrelaties_bron ON public.assetrelaties (bron_asset_uuid);
-CREATE INDEX IF NOT EXISTS public.idx_assetrelaties_doel ON public.assetrelaties (doel_asset_uuid);
-CREATE INDEX IF NOT EXISTS public.idx_assetrelaties_relatietype ON public.assetrelaties (relatietype_uuid);
-CREATE INDEX IF NOT EXISTS public.idx_assetrelaties_bron_type ON public.assetrelaties (bron_type);
-CREATE INDEX IF NOT EXISTS public.idx_assetrelaties_doel_type ON public.assetrelaties (doel_type);
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_bron ON public.assetrelaties (bron_asset_uuid);
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_doel ON public.assetrelaties (doel_asset_uuid);
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_relatietype ON public.assetrelaties (relatietype_uuid);
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_bron_type ON public.assetrelaties (bron_type);
+CREATE INDEX IF NOT EXISTS idx_assetrelaties_doel_type ON public.assetrelaties (doel_type);
 
 DO $$
 BEGIN
@@ -143,7 +143,7 @@ BEGIN
         MATCH SIMPLE ON UPDATE NO ACTION ON DELETE CASCADE NOT VALID;
 EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
 END $$;
-CREATE INDEX IF NOT EXISTS public.idx_betrokkenerelaties_bron_asset ON public.betrokkenerelaties (bron_asset_uuid);
-CREATE INDEX IF NOT EXISTS public.idx_betrokkenerelaties_bron_agent ON public.betrokkenerelaties (bron_agent_uuid);
-CREATE INDEX IF NOT EXISTS public.idx_betrokkenerelaties_doel_agent ON public.betrokkenerelaties (doel_agent_uuid);
-CREATE INDEX IF NOT EXISTS public.idx_betrokkenerelaties_actief ON public.betrokkenerelaties (actief);
+CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_bron_asset ON public.betrokkenerelaties (bron_asset_uuid);
+CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_bron_agent ON public.betrokkenerelaties (bron_agent_uuid);
+CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_doel_agent ON public.betrokkenerelaties (doel_agent_uuid);
+CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_actief ON public.betrokkenerelaties (actief);
