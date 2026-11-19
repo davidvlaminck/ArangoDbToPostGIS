@@ -9,8 +9,12 @@ from typing import Any
 
 from arangodbtopostgis.sync_assets import export_assets as sync_export_assets
 from arangodbtopostgis.sync_assetrelaties import export_assetrelaties as sync_export_assetrelaties
-from arangodbtopostgis.sync_bestekkoppelingen import export_bestekkoppelingen as sync_export_bestekkoppelingen
-from arangodbtopostgis.sync_betrokkenerelaties import export_betrokkenerelaties as sync_export_betrokkenerelaties
+from arangodbtopostgis.sync_bestekkoppelingen import (
+    export_bestekkoppelingen as sync_export_bestekkoppelingen,
+)
+from arangodbtopostgis.sync_betrokkenerelaties import (
+    export_betrokkenerelaties as sync_export_betrokkenerelaties,
+)
 from arangodbtopostgis.db import get_arango_db, get_postgis_connection
 from arangodbtopostgis.resume import (
     RESUMABLE_STEPS,
@@ -19,7 +23,11 @@ from arangodbtopostgis.resume import (
     mark_step_started,
     prepare_step,
 )
-from arangodbtopostgis.setup_postgis_tables import ensure_tables
+from arangodbtopostgis.setup_postgis_tables import (
+    create_relations,
+    drop_relations,
+    ensure_tables,
+)
 from arangodbtopostgis.sync_agents import AgentsSyncer
 from arangodbtopostgis.sync_assettypes import AssettypesSyncer
 from arangodbtopostgis.sync_beheerders import BeheerdersSyncer
@@ -45,7 +53,7 @@ def _postgis_install_instructions(dbname: str, user: str, exc: Exception) -> str
         f"Error: {exc}\n\n"
         "To install/enable it, connect as a PostgreSQL superuser (or a role with CREATE privilege "
         f"on database '{dbname}') and run:\n"
-        f"  psql -d {dbname} -U <superuser> -c \"CREATE EXTENSION IF NOT EXISTS postgis;\"\n\n"
+        f'  psql -d {dbname} -U <superuser> -c "CREATE EXTENSION IF NOT EXISTS postgis;"\n\n'
         "If the PostGIS packages are not installed on the server, install them first (Debian/Ubuntu):\n"
         "  sudo apt install postgis postgresql-<version>-postgis-3\n"
         "then rerun the CREATE EXTENSION command. Verify with:\n"
@@ -74,7 +82,9 @@ def check_postgis_access(env: str = "prd") -> bool:
                     with conn.cursor() as c2:
                         c2.execute("SELECT 1 FROM pg_extension WHERE extname = 'postgis'")
                         if c2.fetchone() is None:
-                            raise RuntimeError("CREATE EXTENSION reported success but postgis not found")
+                            raise RuntimeError(
+                                "CREATE EXTENSION reported success but postgis not found"
+                            )
                     logger.info("PostGIS access OK (enabled 'postgis' extension)")
                     return True
                 except Exception as exc:
@@ -127,7 +137,12 @@ EXPORTERS: dict[str, Any] = {
 
 
 def fill_database(env: str = "prd") -> None:
-    """Run every configured syncer with params-based resume/checkpoints."""
+    """Run every configured syncer with params-based resume/checkpoints.
+
+    On a fresh start (sentinel ``params`` missing), FK constraints and
+    secondary indexes are dropped before bulk loading so relations load fast,
+    then restored as the final step after all data has been synced.
+    """
     syncers_by_step: dict[str, Any] = {
         getattr(s, "RESUME_STEP", s.ARANGO_COLLECTION): s
         for s in [
@@ -140,6 +155,39 @@ def fill_database(env: str = "prd") -> None:
             ToezichtgroepenSyncer(),
         ]
     }
+    fresh = ensure_tables_and_maybe_drop_constraints(env)
+    try:
+        _run_steps(env, syncers_by_step)
+    finally:
+        # Restore FK constraints and secondary indexes as the final step after
+        # all data has been synced.
+        conn = get_postgis_connection(env)
+        try:
+            create_relations(conn)
+        finally:
+            conn.close()
+
+
+def ensure_tables_and_maybe_drop_constraints(env: str = "prd") -> bool:
+    """Ensure tables exist; drop FKs/indexes on a fresh start.
+
+    Returns ``True`` when a fresh start was performed.
+    """
+    conn = get_postgis_connection(env)
+    try:
+        fresh = ensure_tables(conn)
+    finally:
+        conn.close()
+    if fresh:
+        conn = get_postgis_connection(env)
+        try:
+            drop_relations(conn)
+        finally:
+            conn.close()
+    return fresh
+
+
+def _run_steps(env: str, syncers_by_step: dict[str, Any]) -> None:
     conn0 = get_postgis_connection(env)
     try:
         param = get_param(conn0, "sync_current_step")

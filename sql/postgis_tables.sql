@@ -107,36 +107,9 @@ CREATE TABLE IF NOT EXISTS public.assets
     CONSTRAINT assets_pkey PRIMARY KEY (uuid)
 );
 
-CREATE INDEX IF NOT EXISTS idx_assets_assettype ON public.assets (assettype);
-
--- Optional JSONB indexes (add only if/when specific queries are slow; not created by default).
--- jsonb is built-in (no extension). GIN indexes are large and slow writes/sync at 4M rows,
--- so prefer a targeted index on the concrete column/path you search, not all jsonb columns.
---
--- Containment queries (e.g. attributes @> '{"SomeKey":"value"}'):
---   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_assets_attributes_gin
---     ON public.assets USING GIN (attributes jsonb_path_ops);  -- smaller; supports @>
---   -- use jsonb_ops instead of jsonb_path_ops if you also need key-existence (?, ?|, ?&).
---
--- Single nested path / equality (often best):
---   CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_assets_attr_somekey
---     ON public.assets ((attributes->>'SomeKey'));
---
--- Extensions (not required for the above): btree_gin only for mixed multicolumn GIN;
--- pg_trgm only for LIKE/ILIKE/trigram text search, not JSONB containment.
-
-DO $$
-BEGIN
-    ALTER TABLE IF EXISTS public.assets
-        ADD CONSTRAINT assets_assettypes_fkey
-        FOREIGN KEY (assettype)
-        REFERENCES public.assettypes (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE NO ACTION
-        NOT VALID;
-EXCEPTION WHEN duplicate_object THEN
-    -- constraint already exists, skip
-END $$;
+-- Indexes and foreign-key constraints for assets are managed in
+-- arangodbtopostgis.setup_postgis_tables (SECONDARY_INDEXES / FK_CONSTRAINTS)
+-- so they can be dropped before bulk loads and restored afterward.
 
 
 -- Table: public.geometrie
@@ -148,14 +121,12 @@ CREATE TABLE IF NOT EXISTS public.geometrie
     asset_uuid uuid NOT NULL,
     wkt text NOT NULL,
     geom geometry(GeometryZ, 3812) NOT NULL,
-    CONSTRAINT geometrie_pkey PRIMARY KEY (asset_uuid),
-    CONSTRAINT geometrie_assets_fkey FOREIGN KEY (asset_uuid)
-        REFERENCES public.assets (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE CASCADE
+    CONSTRAINT geometrie_pkey PRIMARY KEY (asset_uuid)
 );
 
-CREATE INDEX IF NOT EXISTS idx_geometrie_geom ON public.geometrie USING GIST (geom);
+-- Indexes and foreign keys for geometrie are managed in
+-- arangodbtopostgis.setup_postgis_tables (SECONDARY_INDEXES / FK_CONSTRAINTS)
+-- so they can be dropped before bulk loads and restored afterward.
 
 
 -- Table: public.bestekken
@@ -186,30 +157,12 @@ CREATE TABLE IF NOT EXISTS public.bestekkoppelingen
     start_datum timestamptz,
     eind_datum timestamptz,
     koppeling_status text,
-    CONSTRAINT bestekkoppelingen_pkey PRIMARY KEY (asset_uuid, volgnummer),
-    CONSTRAINT bestekkoppelingen_assets_fkey FOREIGN KEY (asset_uuid)
-        REFERENCES public.assets (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE CASCADE
+    CONSTRAINT bestekkoppelingen_pkey PRIMARY KEY (asset_uuid, volgnummer)
 );
 
-CREATE INDEX IF NOT EXISTS idx_bestekkoppelingen_bestek_uuid
-    ON public.bestekkoppelingen (bestek_uuid);
-CREATE INDEX IF NOT EXISTS idx_bestekkoppelingen_asset_uuid
-    ON public.bestekkoppelingen (asset_uuid);
-
-DO $$
-BEGIN
-    ALTER TABLE IF EXISTS public.bestekkoppelingen
-        ADD CONSTRAINT bestekkoppelingen_bestekken_fkey
-        FOREIGN KEY (bestek_uuid)
-        REFERENCES public.bestekken (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE NO ACTION
-        NOT VALID;
-EXCEPTION WHEN duplicate_object OR undefined_table THEN
-    NULL;
-END $$;
+-- Indexes and foreign keys for bestekkoppelingen are managed in
+-- arangodbtopostgis.setup_postgis_tables (SECONDARY_INDEXES / FK_CONSTRAINTS)
+-- so they can be dropped before bulk loads and restored afterward.
 
 
 -- Table: public.beheerders
@@ -224,23 +177,9 @@ CREATE TABLE IF NOT EXISTS public.beheerders
     CONSTRAINT beheerders_pkey PRIMARY KEY (uuid)
 );
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'assets' AND column_name = 'schadebeheerder'
-    ) THEN
-        ALTER TABLE public.assets
-            ADD CONSTRAINT beheerders_assets_fkey
-            FOREIGN KEY (schadebeheerder)
-            REFERENCES public.beheerders (uuid) MATCH SIMPLE
-            ON UPDATE NO ACTION
-            ON DELETE NO ACTION
-            NOT VALID;
-    END IF;
-EXCEPTION WHEN duplicate_object OR undefined_column OR undefined_table THEN
-    NULL;
-END $$;
+-- Indexes and foreign keys referencing assets from beheerders are managed in
+-- arangodbtopostgis.setup_postgis_tables (FK_CONSTRAINTS) so they can be
+-- dropped before bulk loads and restored afterward.
 
 
 -- Table: public.toezichtgroepen
@@ -255,23 +194,9 @@ CREATE TABLE IF NOT EXISTS public.toezichtgroepen
     CONSTRAINT toezichtgroepen_pkey PRIMARY KEY (uuid)
 );
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'assets' AND column_name = 'toezichtgroep'
-    ) THEN
-        ALTER TABLE public.assets
-            ADD CONSTRAINT toezichtgroepen_assets_fkey
-            FOREIGN KEY (toezichtgroep)
-            REFERENCES public.toezichtgroepen (uuid) MATCH SIMPLE
-            ON UPDATE NO ACTION
-            ON DELETE NO ACTION
-            NOT VALID;
-    END IF;
-EXCEPTION WHEN duplicate_object OR undefined_column OR undefined_table THEN
-    NULL;
-END $$;
+-- Indexes and foreign keys referencing assets from toezichtgroepen are managed in
+-- arangodbtopostgis.setup_postgis_tables (FK_CONSTRAINTS) so they can be
+-- dropped before bulk loads and restored afterward.
 
 
 -- Table: public.identiteiten
@@ -290,23 +215,9 @@ CREATE TABLE IF NOT EXISTS public.identiteiten
     CONSTRAINT identiteiten_pkey PRIMARY KEY (uuid)
 );
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_schema = 'public' AND table_name = 'assets' AND column_name = 'toezichter'
-    ) THEN
-        ALTER TABLE public.assets
-            ADD CONSTRAINT identiteiten_assets_fkey
-            FOREIGN KEY (toezichter)
-            REFERENCES public.identiteiten (uuid) MATCH SIMPLE
-            ON UPDATE NO ACTION
-            ON DELETE NO ACTION
-            NOT VALID;
-    END IF;
-EXCEPTION WHEN duplicate_object OR undefined_column OR undefined_table THEN
-    NULL;
-END $$;
+-- Indexes and foreign keys referencing assets from identiteiten are managed in
+-- arangodbtopostgis.setup_postgis_tables (FK_CONSTRAINTS) so they can be
+-- dropped before bulk loads and restored afterward.
 
 
 -- Table: public.relatietypes
@@ -365,48 +276,11 @@ EXCEPTION WHEN undefined_table OR undefined_column THEN
     NULL;
 END $$;
 
-CREATE INDEX IF NOT EXISTS idx_assetrelaties_bron ON public.assetrelaties (bron_asset_uuid);
-CREATE INDEX IF NOT EXISTS idx_assetrelaties_doel ON public.assetrelaties (doel_asset_uuid);
-CREATE INDEX IF NOT EXISTS idx_assetrelaties_relatietype ON public.assetrelaties (relatietype_uuid);
+-- Indexes and foreign keys for assetrelaties are managed in
+-- arangodbtopostgis.setup_postgis_tables (SECONDARY_INDEXES / FK_CONSTRAINTS)
+-- so they can be dropped before bulk loads and restored afterward.
 
-DO $$
-BEGIN
-    ALTER TABLE IF EXISTS public.assetrelaties
-        ADD CONSTRAINT assetrelaties_bron_fkey
-        FOREIGN KEY (bron_asset_uuid)
-        REFERENCES public.assets (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE CASCADE
-        NOT VALID;
-EXCEPTION WHEN duplicate_object OR undefined_table THEN
-    NULL;
-END $$;
 
-DO $$
-BEGIN
-    ALTER TABLE IF EXISTS public.assetrelaties
-        ADD CONSTRAINT assetrelaties_doel_fkey
-        FOREIGN KEY (doel_asset_uuid)
-        REFERENCES public.assets (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE CASCADE
-        NOT VALID;
-EXCEPTION WHEN duplicate_object OR undefined_table THEN
-    NULL;
-END $$;
-
-DO $$
-BEGIN
-    ALTER TABLE IF EXISTS public.assetrelaties
-        ADD CONSTRAINT assetrelaties_relatietype_fkey
-        FOREIGN KEY (relatietype_uuid)
-        REFERENCES public.relatietypes (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION
-        ON DELETE NO ACTION
-        NOT VALID;
-EXCEPTION WHEN duplicate_object OR undefined_table THEN
-    NULL;
-END $$;
 -- Table: public.betrokkenerelaties
 -- Edge collection; source may be asset or agent; target always agent.
 
@@ -427,45 +301,10 @@ CREATE TABLE IF NOT EXISTS public.betrokkenerelaties
     CONSTRAINT betrokkenerelaties_pkey PRIMARY KEY (uuid)
 );
 
-CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_bron_asset ON public.betrokkenerelaties (bron_asset_uuid);
-CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_bron_agent ON public.betrokkenerelaties (bron_agent_uuid);
-CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_doel_agent ON public.betrokkenerelaties (doel_agent_uuid);
+-- Indexes and foreign keys for betrokkenerelaties are managed in
+-- arangodbtopostgis.setup_postgis_tables (SECONDARY_INDEXES / FK_CONSTRAINTS)
+-- so they can be dropped before bulk loads and restored afterward.
 
-DO $$
-BEGIN
-    ALTER TABLE IF EXISTS public.betrokkenerelaties
-        ADD CONSTRAINT betrokkenerelaties_bron_asset_fkey
-        FOREIGN KEY (bron_asset_uuid) REFERENCES public.assets (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION ON DELETE CASCADE NOT VALID;
-EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
-END $$;
-
-DO $$
-BEGIN
-    ALTER TABLE IF EXISTS public.betrokkenerelaties
-        ADD CONSTRAINT betrokkenerelaties_bron_agent_fkey
-        FOREIGN KEY (bron_agent_uuid) REFERENCES public.agents (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION ON DELETE CASCADE NOT VALID;
-EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
-END $$;
-
-DO $$
-BEGIN
-    ALTER TABLE IF EXISTS public.betrokkenerelaties
-        ADD CONSTRAINT betrokkenerelaties_doel_agent_fkey
-        FOREIGN KEY (doel_agent_uuid) REFERENCES public.agents (uuid) MATCH SIMPLE
-        ON UPDATE NO ACTION ON DELETE CASCADE NOT VALID;
-EXCEPTION WHEN duplicate_object OR undefined_table THEN NULL;
-END $$;
-
-
-DO $$
-BEGIN
-    ALTER TABLE public.betrokkenerelaties
-        ALTER COLUMN relatietype_uuid DROP NOT NULL;
-EXCEPTION WHEN undefined_table OR undefined_column THEN
-    NULL;
-END $$;
 
 -- View: aantallen (row counts across all managed tables)
 CREATE OR REPLACE VIEW public.aantallen AS
@@ -505,10 +344,6 @@ SELECT * FROM public.assetrelaties WHERE relatietype_uuid = '8677a92e-7021-4e39-
 CREATE OR REPLACE VIEW public.gemigreerdnaar_relaties AS
 SELECT * FROM public.assetrelaties WHERE relatietype_uuid = 'f0ed1efa-fe29-4861-89dc-5d3bc40f0894';
 
--- Additional indexes for FK / filtered columns
-CREATE INDEX IF NOT EXISTS idx_assets_assettype ON public.assets (assettype);
-CREATE INDEX IF NOT EXISTS idx_assets_actief ON public.assets (actief);
-CREATE INDEX IF NOT EXISTS idx_assetrelaties_relatietype ON public.assetrelaties (relatietype_uuid);
-CREATE INDEX IF NOT EXISTS idx_assetrelaties_bron_type ON public.assetrelaties (bron_type);
-CREATE INDEX IF NOT EXISTS idx_assetrelaties_doel_type ON public.assetrelaties (doel_type);
-CREATE INDEX IF NOT EXISTS idx_betrokkenerelaties_actief ON public.betrokkenerelaties (actief);
+-- All secondary indexes and foreign-key constraints are managed in
+-- arangodbtopostgis.setup_postgis_tables (SECONDARY_INDEXES / FK_CONSTRAINTS)
+-- so they can be dropped before bulk loads and restored afterward.
